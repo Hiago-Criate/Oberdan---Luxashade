@@ -17,6 +17,7 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import axios from 'axios';
+import { calculatePrice } from './utils/calculator';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -83,15 +84,12 @@ export default function App() {
   // Calculate price whenever relevant fields change
   useEffect(() => {
     if (step === 'order' && currentItem.width && currentItem.model) {
-      const fetchPrice = async () => {
-        try {
-          const res = await axios.post('/api/calculate', currentItem);
-          setCurrentItem(prev => ({ ...prev, price: res.data.price }));
-        } catch (e) {
-          console.error(e);
-        }
-      };
-      fetchPrice();
+      try {
+        const price = calculatePrice(currentItem);
+        setCurrentItem(prev => ({ ...prev, price }));
+      } catch (e) {
+        console.error('Calculation error:', e);
+      }
     }
   }, [currentItem.model, currentItem.opening, currentItem.railColor, currentItem.width, currentItem.motor, currentItem.quantity, step]);
 
@@ -138,7 +136,8 @@ export default function App() {
   const handleFinalize = async () => {
     setLoading(true);
     try {
-      await axios.post('/api/submit-order', {
+      const WEBHOOK_URL = 'https://147hook.criate.online/webhook/94e9c23d-4b00-40aa-8e20-8e4da2c94907';
+      await axios.post(WEBHOOK_URL, {
         cnpj,
         items: cart,
         customer: userInfo,
@@ -146,6 +145,7 @@ export default function App() {
       });
       setStep('success');
     } catch (e) {
+      console.error('Submission error:', e);
       alert('Erro ao enviar pedido. Tente novamente.');
     } finally {
       setLoading(false);
