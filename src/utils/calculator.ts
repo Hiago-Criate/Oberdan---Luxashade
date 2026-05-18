@@ -68,15 +68,7 @@ function calcularValorComponente(comp: any, giCod: string, larguraMM: number) {
   return comp.v * quantidade * getMultiplicador(giCod);
 }
 
-const MOTOR_PRICES: any = {
-  "MOTOR SOMFY GLYDEA ULTRA 60E RTS": { Branco: 4353, Preto: 4320 },
-  "MOTOR SOMFY GLYDEA ULTRA 60E W CONTATO SECO": { Branco: 3703, Preto: 3670 },
-  "MOTOR SOMFY ELATIO 50KG W CONTATO SECO": { Branco: 1683, Preto: 1650 },
-  "MOTOR SOMFY ELATIO 50KG RTS": { Branco: 1683, Preto: 1650 },
-  "MOTOR IVOLVE IV50 N2 W CONTATO SECO": { Branco: 1023, Preto: 990 },
-  "MOTOR IVOLVE IV60 N1 RF + WI-FI": { Branco: 691.5, Preto: 650 },
-  "SEM MOTOR (INFORMATIVO)": { Branco: 0, Preto: 0 }
-};
+import { MOTOR_PRICES } from './motorPrices';
 
 export function calculatePrice(data: any) {
   const { model, opening, railColor, width, motor, quantity } = data;

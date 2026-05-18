@@ -1,0 +1,79 @@
+// Modelo unificado de item no carrinho. União discriminada por `kind`.
+
+import type { Brand } from '../data/brands';
+
+export interface TrilhoItem {
+  kind: 'trilho';
+  id: string;
+  brand: Brand;
+  productCategory: 'Trilho';
+  model: string;
+  environment: string;
+  quantity: number;
+  width: string;
+  height: string;
+  opening: string;
+  railColor: string;
+  motorSide: string;
+  motor: string;
+  price: number;
+}
+
+export interface OpcionalEscolhido {
+  codigo: string;
+  descricao: string;
+  formula: 'fixo' | 'porLargura' | 'porAltura' | 'porAltComando';
+  valorUnit: number;
+  valor: number; // total cobrado por peça (já considerando largura/altura/comando)
+}
+
+export interface ShadeItem {
+  kind: 'shade';
+  id: string;
+  brand: Brand;
+  productCategory: 'Cortina';
+  familia: string;
+  acionamento: string;
+  modelo: string;
+  ambiente: string;
+  tipoTecido: string;
+  colecao: string;
+  corTecido: string;
+  corAcabamento: string;
+  corAcabamentoNome: string; // 'Branco' | 'Bege' | 'Cinza' | 'Preto'
+  motor: string;             // 'SEM MOTOR (INFORMATIVO)' se MANUAL
+  widthMm: number;
+  heightMm: number;
+  quantity: number;
+  // Comando manual (preenchido só quando acionamento === 'MANUAL').
+  comandoLado?: 'Direita' | 'Esquerda';
+  comandoAlturaMm?: number;
+  // Acessórios opcionais (ShadeXP). Já listados com o total unitário.
+  opcionais?: OpcionalEscolhido[];
+  opcionaisTotal?: number;
+  codigo: string;            // ex. 298.01.111
+  m2: number;
+  m2Cobrado: number;         // max(m2, m2Min) usado no cálculo
+  vlrM2: number;
+  price: number;             // total da peça × quantity (já com opcionais)
+}
+
+export type OrderItem = TrilhoItem | ShadeItem;
+
+// Mapeamento cód -> nome legível da cor de acabamento.
+export const COR_ACAB_NOMES: Record<string, string> = {
+  '01': 'Branco',
+  '02': 'Bege',
+  '03': 'Cinza',
+  '05': 'Preto',
+  // Variantes sem zero à esquerda (algumas linhas da planilha).
+  '1': 'Branco',
+  '2': 'Bege',
+  '3': 'Cinza',
+  '5': 'Preto',
+};
+
+// Cor do trilho/acabamento usada no MOTOR_PRICES (Branco/Preto). Default = Branco.
+export function motorColorFromAcabamento(cod: string): 'Branco' | 'Preto' {
+  return cod === '05' || cod === '5' ? 'Preto' : 'Branco';
+}
