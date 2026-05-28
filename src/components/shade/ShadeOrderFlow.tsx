@@ -69,9 +69,9 @@ type Draft = {
   modulosAssimetricos: boolean;
   modLargEsqStr: string;
   modLargDirStr: string;
-  // Instalação
-  mesmoAmbiente: boolean;
-  ladoALado: boolean;
+  // Instalação — null = ainda não respondido (sem pré-seleção)
+  mesmoAmbiente: boolean | null;
+  ladoALado: boolean | null;
   ladoALadoCom: string;
   // Opcionais selecionados (set de códigos).
   opcionais: Set<string>;
@@ -94,8 +94,8 @@ const emptyDraft = (): Draft => ({
   modulosAssimetricos: false,
   modLargEsqStr: '',
   modLargDirStr: '',
-  mesmoAmbiente: false,
-  ladoALado: false,
+  mesmoAmbiente: null,
+  ladoALado: null,
   ladoALadoCom: '',
   opcionais: new Set<string>(),
 });
@@ -123,8 +123,8 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
           modulosAssimetricos: initialItem.modulosAssimetricos ?? false,
           modLargEsqStr: initialItem.moduloLargEsqMm ? String(initialItem.moduloLargEsqMm) : '',
           modLargDirStr: initialItem.moduloLargDirMm ? String(initialItem.moduloLargDirMm) : '',
-          mesmoAmbiente: initialItem.mesmoAmbiente ?? false,
-          ladoALado: initialItem.ladoALado ?? false,
+          mesmoAmbiente: initialItem.mesmoAmbiente ?? null,
+          ladoALado: initialItem.ladoALado ?? null,
           ladoALadoCom: initialItem.ladoALadoCom ?? '',
           opcionais: new Set(initialItem.opcionais?.map((o) => o.codigo) ?? []),
         }
@@ -431,7 +431,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
                   type="number"
                   placeholder="0"
                   value={draft.widthStr}
-                  onChange={(e) => setDraft((d) => ({ ...d, widthStr: e.target.value }))}
+                  onChange={(e) => setDraft((d) => ({ ...d, widthStr: e.target.value.replace(/^0+(?=\d)/, '') }))}
                   className={cn(
                     'w-full bg-white border p-4 rounded-2xl focus:outline-none focus:ring-2',
                     widthInvalid
@@ -461,7 +461,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
                   type="number"
                   placeholder="0"
                   value={draft.heightStr}
-                  onChange={(e) => setDraft((d) => ({ ...d, heightStr: e.target.value }))}
+                  onChange={(e) => setDraft((d) => ({ ...d, heightStr: e.target.value.replace(/^0+(?=\d)/, '') }))}
                   className={cn(
                     'w-full bg-white border p-4 rounded-2xl focus:outline-none focus:ring-2',
                     heightInvalid
@@ -639,7 +639,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
         <>
           <StepShell label="Mesmo Ambiente?">
             <ChipsField
-              value={draft.mesmoAmbiente ? 'Sim' : 'Não'}
+              value={draft.mesmoAmbiente === null ? '' : draft.mesmoAmbiente ? 'Sim' : 'Não'}
               options={['Não', 'Sim']}
               cols={2}
               onChange={(v) => setDraft((d) => ({ ...d, mesmoAmbiente: v === 'Sim' }))}
@@ -651,7 +651,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
             hint={draft.ladoALado ? 'Informe qual item fica ao lado (ex: "Item 1" ou "Sala de Estar").' : undefined}
           >
             <ChipsField
-              value={draft.ladoALado ? 'Sim' : 'Não'}
+              value={draft.ladoALado === null ? '' : draft.ladoALado ? 'Sim' : 'Não'}
               options={['Não', 'Sim']}
               cols={2}
               onChange={(v) => setDraft((d) => ({ ...d, ladoALado: v === 'Sim', ladoALadoCom: v === 'Não' ? '' : d.ladoALadoCom }))}
