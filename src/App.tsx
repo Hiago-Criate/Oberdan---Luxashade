@@ -82,16 +82,15 @@ export default function App() {
   };
 
   const Header = () => (
-    <div className="pt-12 pb-8 flex flex-col items-center">
+    <div className="pt-12 pb-8 flex flex-col items-center gap-4">
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-4xl font-light tracking-widest text-zinc-800 mb-2"
       >
-        LUXASHADE
+        <img src="/logo-luxashade.png" alt="Luxashade" className="h-11 object-contain" />
       </motion.div>
-      <div className="h-px w-12 bg-zinc-200 mb-2" />
-      <div className="text-[10px] uppercase tracking-widest text-zinc-400">× ShadeXP</div>
+      <div className="h-px w-12 bg-zinc-200" />
+      <img src="/logo-shadexp.png" alt="ShadeXP" className="h-5 object-contain opacity-60" />
     </div>
   );
 
@@ -141,10 +140,12 @@ export default function App() {
               exit={{ opacity: 0, x: -20 }}
               className="h-screen flex flex-col justify-center gap-8"
             >
-              <div className="space-y-2">
-                <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-semibold">
-                  {BRAND_LABEL[brand]}
-                </p>
+              <div className="space-y-3">
+                <img
+                  src={brand === 'shadexp' ? '/logo-shadexp.png' : '/logo-luxashade.png'}
+                  alt={BRAND_LABEL[brand]}
+                  className="h-5 object-contain object-left"
+                />
                 <h2 className="text-2xl font-light text-zinc-800">Identificação</h2>
                 <p className="text-zinc-500 text-sm">Por favor, informe o CNPJ da empresa</p>
               </div>
@@ -192,9 +193,11 @@ export default function App() {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-semibold mb-1">
-                    {BRAND_LABEL[brand]}
-                  </p>
+                  <img
+                    src={brand === 'shadexp' ? '/logo-shadexp.png' : '/logo-luxashade.png'}
+                    alt={BRAND_LABEL[brand]}
+                    className="h-4 object-contain object-left mb-2"
+                  />
                   <h2 className="text-2xl font-medium flex items-center gap-2">
                     <ShoppingBag size={24} />
                     Seu Pedido

@@ -49,9 +49,11 @@ export function OrderFlow({ brand, initialItem, onSave, onBack }: Props) {
           <ArrowLeft size={20} />
         </button>
         <div>
-          <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-semibold">
-            {BRAND_LABEL[brand]}
-          </p>
+          <img
+            src={brand === 'shadexp' ? '/logo-shadexp.png' : '/logo-luxashade.png'}
+            alt={BRAND_LABEL[brand]}
+            className="h-4 object-contain object-left mb-1"
+          />
           <h2 className="text-xl font-medium">Configurar Item</h2>
         </div>
       </div>
