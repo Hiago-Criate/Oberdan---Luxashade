@@ -105,11 +105,20 @@ function tipoTecidoFromColecao(colecao: string): string {
   // Para coleções sem sufixo (BALLYS, BASIC, AURA 60MM…) usamos 'OUTROS'.
   const m = colecao.match(/\b(TS|BK|TR)\b/);
   if (m) {
-    if (m[1] === 'TS') return 'Translucido Solar';
+    if (m[1] === 'TS') return 'Tela Solar';
     if (m[1] === 'BK') return 'Blackout';
     if (m[1] === 'TR') return 'Translucido';
   }
   return 'Outros';
+}
+
+// Renomeações comerciais de coleções aplicadas na geração do catálogo.
+const COLECAO_RENAMES: Record<string, string> = {
+  'DAY NIGHT': 'DAY NIGHT RIOJA TR + BK',
+};
+
+function normalizeColecao(colecao: string): string {
+  return COLECAO_RENAMES[colecao] ?? colecao;
 }
 
 async function main() {
@@ -209,8 +218,9 @@ async function main() {
     const fi = intern(familias, r.familia);
     const ai = intern(acionamentos, r.acionamento);
     const mi = intern(modelos, r.modelo);
+    // Tipo é inferido do nome ORIGINAL (DAY NIGHT → Outros); o nome exibido é o normalizado.
     const ti = intern(tipos, tipoTecidoFromColecao(r.colecao));
-    const ci = intern(colecoes, r.colecao);
+    const ci = intern(colecoes, normalizeColecao(r.colecao));
     const cti = intern(coresTec, r.corTecido);
     const cai = intern(coresAcab, r.corAcabCod);
 

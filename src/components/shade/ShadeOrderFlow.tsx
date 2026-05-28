@@ -9,7 +9,7 @@ import {
   coresAcabamentoFor,
 } from '../../data/shadeQueries';
 import { calculateShadePrice, getLimits, type ShadeDraft, type ShadeQuote } from '../../utils/calculatorShade';
-import { MOTORS } from '../../utils/motorPrices';
+import { MOTORS, SXP_SHADE_MOTORS } from '../../utils/motorPrices';
 import { cn } from '../../utils/cn';
 import { COR_ACAB_NOMES, type OpcionalEscolhido, type ShadeItem } from '../../types/order';
 import type { Brand } from '../../data/brands';
@@ -30,6 +30,15 @@ const fmtBRL = (n: number) =>
 
 const fmtNum = (n: number, digits = 2) =>
   n.toLocaleString('pt-BR', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+
+// Ordem preferida para exibição dos tipos de tecido.
+const TIPO_ORDER = ['Tela Solar', 'Outros', 'Blackout', 'Translucido'];
+const sortTipos = (opts: readonly string[]) =>
+  [...opts].sort((a, b) => {
+    const ia = TIPO_ORDER.indexOf(a);
+    const ib = TIPO_ORDER.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
 
 interface Props {
   brand: Brand;
@@ -53,9 +62,17 @@ type Draft = {
   corTecido: string;
   corAcabamento: string;
   motor: string;
-  // Comando (manual). Default "Direita".
-  comandoLado: 'Direita' | 'Esquerda';
+  // Lado do comando (manual) ou do motor (motorizada). Sem default.
+  lado: 'Direita' | 'Esquerda' | '';
   comandoAlturaStr: string;
+  // Módulos (produtos "DUPLA").
+  modulosAssimetricos: boolean;
+  modLargEsqStr: string;
+  modLargDirStr: string;
+  // Instalação
+  mesmoAmbiente: boolean;
+  ladoALado: boolean;
+  ladoALadoCom: string;
   // Opcionais selecionados (set de códigos).
   opcionais: Set<string>;
 };
@@ -72,8 +89,14 @@ const emptyDraft = (): Draft => ({
   corTecido: '',
   corAcabamento: '',
   motor: '',
-  comandoLado: 'Direita',
+  lado: '',
   comandoAlturaStr: '',
+  modulosAssimetricos: false,
+  modLargEsqStr: '',
+  modLargDirStr: '',
+  mesmoAmbiente: false,
+  ladoALado: false,
+  ladoALadoCom: '',
   opcionais: new Set<string>(),
 });
 
@@ -92,8 +115,17 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
           corTecido: initialItem.corTecido,
           corAcabamento: initialItem.corAcabamento,
           motor: initialItem.motor,
-          comandoLado: initialItem.comandoLado ?? 'Direita',
+          lado: (() => {
+            const l = initialItem.comandoLado ?? initialItem.motorLado ?? '';
+            return l === 'Direita' || l === 'Esquerda' ? l : '';
+          })(),
           comandoAlturaStr: initialItem.comandoAlturaMm ? String(initialItem.comandoAlturaMm) : '',
+          modulosAssimetricos: initialItem.modulosAssimetricos ?? false,
+          modLargEsqStr: initialItem.moduloLargEsqMm ? String(initialItem.moduloLargEsqMm) : '',
+          modLargDirStr: initialItem.moduloLargDirMm ? String(initialItem.moduloLargDirMm) : '',
+          mesmoAmbiente: initialItem.mesmoAmbiente ?? false,
+          ladoALado: initialItem.ladoALado ?? false,
+          ladoALadoCom: initialItem.ladoALadoCom ?? '',
           opcionais: new Set(initialItem.opcionais?.map((o) => o.codigo) ?? []),
         }
       : emptyDraft(),
@@ -192,6 +224,25 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
   const dimsReady =
     !!(limits && widthMm > 0 && heightMm > 0 && !widthInvalid && !heightInvalid && !areaExcedida && !proporcaoInvalida);
 
+  // Produtos com lado fixo "Dir./Esq." (DUPLA / DAY NIGHT) — não dá opção de escolher.
+  const isDupla = /\bDUPLA\b/i.test(draft.modelo);
+  const isDayNight = /DAY ?NIGHT/i.test(draft.modelo);
+  const ladoFixo = isDupla || isDayNight;
+  const ladoLabel = isManual ? 'Lado do Comando' : 'Lado do Motor';
+  const ladoValue = ladoFixo ? 'Dir./Esq.' : draft.lado;
+  const ladoReady = ladoFixo || !!draft.lado;
+
+  // Altura do comando — só MANUAL.
+  const alturaComandoReady = !isManual || comandoAlturaMm > 0;
+
+  // Módulos assimétricos — só produtos DUPLA.
+  const modEsqMm = Number(draft.modLargEsqStr) || 0;
+  const modDirMm = Number(draft.modLargDirStr) || 0;
+  const modulosReady = !isDupla || !draft.modulosAssimetricos || (modEsqMm > 0 && modDirMm > 0);
+
+  // Tudo dos "laterais" (lado + altura comando + módulos) pronto.
+  const lateraisReady = dimsReady && ladoReady && alturaComandoReady && modulosReady;
+
   // Opcionais aplicáveis (ShadeXP). Só calcula depois que modelo está escolhido.
   const opcionaisAplicaveis = useMemo(
     () => (isSxp && draft.modelo ? opcionaisFor(draft.modelo, draft.acionamento) : []),
@@ -241,8 +292,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
   const quote: ShadeQuote = calculateShadePrice(draftShade);
 
   // Validação para habilitar o botão.
-  const comandoReady = !isManual || (!!draft.comandoLado && comandoAlturaMm > 0);
-  const canAdd = quote.ok && (!isMotorized || !!draft.motor) && comandoReady;
+  const canAdd = quote.ok && (!isMotorized || !!draft.motor) && lateraisReady;
 
   const toggleOpcional = (codigo: string) => {
     setDraft((d) => {
@@ -281,8 +331,15 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
       widthMm,
       heightMm,
       quantity: draft.quantity,
-      comandoLado: isManual ? draft.comandoLado : undefined,
+      comandoLado: isManual ? (ladoValue || undefined) : undefined,
       comandoAlturaMm: isManual ? comandoAlturaMm : undefined,
+      motorLado: isMotorized ? (ladoValue || undefined) : undefined,
+      modulosAssimetricos: isDupla ? draft.modulosAssimetricos : undefined,
+      moduloLargEsqMm: isDupla && draft.modulosAssimetricos ? modEsqMm : undefined,
+      moduloLargDirMm: isDupla && draft.modulosAssimetricos ? modDirMm : undefined,
+      mesmoAmbiente: draft.mesmoAmbiente || undefined,
+      ladoALado: draft.ladoALado || undefined,
+      ladoALadoCom: draft.ladoALado && draft.ladoALadoCom ? draft.ladoALadoCom : undefined,
       opcionais: opcionaisEscolhidos.length ? opcionaisEscolhidos : undefined,
       opcionaisTotal: opcionaisEscolhidos.length ? opcionaisTotal : undefined,
       codigo: quote.codigo,
@@ -326,10 +383,10 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
         </StepShell>
       )}
 
-      {/* 3. Modelo (Descricao Grupo) */}
+      {/* 3. Modelo (Descricao Grupo) — ComboBox para não cortar descrições longas */}
       {draft.acionamento && (
         <StepShell label="Modelo / Descrição">
-          <SelectField
+          <ComboBox
             value={draft.modelo}
             options={modeloOpts}
             placeholder="Escolha o modelo"
@@ -443,57 +500,116 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
             </div>
           )}
 
-          {/* Comando manual (Lado + Altura) — só aparece quando MANUAL e dimensões OK */}
-          {isManual && dimsReady && (
-            <>
-              <StepShell label="Lado do Comando">
+          {/* Lado (Comando se MANUAL, Motor se motorizada) — sempre, com dimensões OK */}
+          {dimsReady && (
+            <StepShell
+              label={ladoLabel}
+              hint={ladoFixo ? 'Produto duplo / Day Night sai com os dois lados (Dir./Esq.).' : undefined}
+            >
+              {ladoFixo ? (
+                <div className="w-full bg-zinc-900 text-white border border-zinc-900 rounded-2xl py-4 text-center font-medium">
+                  Dir./Esq.
+                </div>
+              ) : (
                 <ChipsField
-                  value={draft.comandoLado}
+                  value={draft.lado}
                   options={['Direita', 'Esquerda']}
                   cols={2}
-                  onChange={(v) => setDraft((d) => ({ ...d, comandoLado: v as 'Direita' | 'Esquerda' }))}
+                  onChange={(v) => setDraft((d) => ({ ...d, lado: v as 'Direita' | 'Esquerda' }))}
                 />
-              </StepShell>
-              <StepShell
-                label="Altura do Comando (mm)"
-                hint={
-                  isSxp
-                    ? 'Alturas padrão: 500, 1.000, 1.200, 1.500, 1.800, 2.000, 2.500 ou 3.000 mm.'
-                    : 'Em milímetros.'
+              )}
+            </StepShell>
+          )}
+
+          {/* Altura do Comando — só MANUAL */}
+          {isManual && dimsReady && (
+            <StepShell
+              label="Altura do Comando (mm)"
+              hint={
+                isSxp
+                  ? 'Alturas padrão: 500, 1.000, 1.200, 1.500, 1.800, 2.000, 2.500 ou 3.000 mm.'
+                  : 'Em milímetros.'
+              }
+            >
+              {isSxp ? (
+                <div className="grid grid-cols-4 gap-2">
+                  {SXP_ALTURAS_COMANDO_MM.map((mm) => {
+                    const active = comandoAlturaMm === mm;
+                    return (
+                      <button
+                        key={mm}
+                        type="button"
+                        onClick={() => setDraft((d) => ({ ...d, comandoAlturaStr: String(mm) }))}
+                        className={cn(
+                          'py-3 rounded-xl border text-xs font-medium transition-all',
+                          active
+                            ? 'bg-zinc-900 text-white border-zinc-900'
+                            : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300',
+                        )}
+                      >
+                        {mm.toLocaleString('pt-BR')}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <input
+                  type="number"
+                  placeholder="Ex: 1500"
+                  value={draft.comandoAlturaStr}
+                  onChange={(e) => setDraft((d) => ({ ...d, comandoAlturaStr: e.target.value }))}
+                  className="w-full bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5"
+                />
+              )}
+            </StepShell>
+          )}
+
+          {/* Módulos — só produtos DUPLA */}
+          {isDupla && dimsReady && (
+            <StepShell label="Módulos">
+              <ChipsField
+                value={draft.modulosAssimetricos ? 'Assimétricos' : 'Simétricos'}
+                options={['Simétricos', 'Assimétricos']}
+                cols={2}
+                onChange={(v) =>
+                  setDraft((d) => ({ ...d, modulosAssimetricos: v === 'Assimétricos' }))
                 }
-              >
-                {isSxp ? (
-                  <div className="grid grid-cols-4 gap-2">
-                    {SXP_ALTURAS_COMANDO_MM.map((mm) => {
-                      const active = comandoAlturaMm === mm;
-                      return (
-                        <button
-                          key={mm}
-                          type="button"
-                          onClick={() => setDraft((d) => ({ ...d, comandoAlturaStr: String(mm) }))}
-                          className={cn(
-                            'py-3 rounded-xl border text-xs font-medium transition-all',
-                            active
-                              ? 'bg-zinc-900 text-white border-zinc-900'
-                              : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300',
-                          )}
-                        >
-                          {mm.toLocaleString('pt-BR')}
-                        </button>
-                      );
-                    })}
+              />
+              {draft.modulosAssimetricos && (
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] uppercase tracking-widest text-zinc-400 font-semibold">
+                      Módulo Esquerdo (mm)
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={draft.modLargEsqStr}
+                      onChange={(e) => setDraft((d) => ({ ...d, modLargEsqStr: e.target.value }))}
+                      className="w-full bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5"
+                    />
                   </div>
-                ) : (
-                  <input
-                    type="number"
-                    placeholder="Ex: 1500"
-                    value={draft.comandoAlturaStr}
-                    onChange={(e) => setDraft((d) => ({ ...d, comandoAlturaStr: e.target.value }))}
-                    className="w-full bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5"
-                  />
-                )}
-              </StepShell>
-            </>
+                  <div className="space-y-1">
+                    <label className="text-[11px] uppercase tracking-widest text-zinc-400 font-semibold">
+                      Módulo Direito (mm)
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={draft.modLargDirStr}
+                      onChange={(e) => setDraft((d) => ({ ...d, modLargDirStr: e.target.value }))}
+                      className="w-full bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5"
+                    />
+                  </div>
+                  {modEsqMm > 0 && modDirMm > 0 && modEsqMm + modDirMm !== widthMm && (
+                    <p className="col-span-2 text-[11px] text-amber-600 leading-tight">
+                      Soma dos módulos ({fmtNum(modEsqMm + modDirMm, 0)} mm) difere da largura total
+                      ({fmtNum(widthMm, 0)} mm). Confirme se está correto.
+                    </p>
+                  )}
+                </div>
+              )}
+            </StepShell>
           )}
 
           <StepShell label="Quantidade">
@@ -518,12 +634,47 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
         </>
       )}
 
-      {/* 5. Tipo de Tecido — só aparece quando dimensões e comando (se manual) estão prontos */}
-      {draft.modelo && limits && dimsReady && (!isManual || comandoReady) && (
+      {/* Instalação: Mesmo Ambiente e Lado a Lado */}
+      {draft.modelo && limits && lateraisReady && (
+        <>
+          <StepShell label="Mesmo Ambiente?">
+            <ChipsField
+              value={draft.mesmoAmbiente ? 'Sim' : 'Não'}
+              options={['Não', 'Sim']}
+              cols={2}
+              onChange={(v) => setDraft((d) => ({ ...d, mesmoAmbiente: v === 'Sim' }))}
+            />
+          </StepShell>
+
+          <StepShell
+            label="Lado a Lado com outro item?"
+            hint={draft.ladoALado ? 'Informe qual item fica ao lado (ex: "Item 1" ou "Sala de Estar").' : undefined}
+          >
+            <ChipsField
+              value={draft.ladoALado ? 'Sim' : 'Não'}
+              options={['Não', 'Sim']}
+              cols={2}
+              onChange={(v) => setDraft((d) => ({ ...d, ladoALado: v === 'Sim', ladoALadoCom: v === 'Não' ? '' : d.ladoALadoCom }))}
+            />
+            {draft.ladoALado && (
+              <input
+                type="text"
+                placeholder="Ex: Item 1 — Sala de Estar"
+                value={draft.ladoALadoCom}
+                onChange={(e) => setDraft((d) => ({ ...d, ladoALadoCom: e.target.value }))}
+                className="mt-3 w-full bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5"
+              />
+            )}
+          </StepShell>
+        </>
+      )}
+
+      {/* 5. Tipo de Tecido — só aparece quando dimensões, lado, comando e módulos estão prontos */}
+      {draft.modelo && limits && lateraisReady && (
         <StepShell label="Tipo de Tecido">
           <ChipsField
             value={draft.tipoTecido}
-            options={tipoOpts}
+            options={sortTipos(tipoOpts)}
             cols={tipoOpts.length <= 2 ? 2 : tipoOpts.length === 3 ? 3 : 4}
             onChange={(v) =>
               setDraft((d) => ({
@@ -534,6 +685,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
                 corAcabamento: '',
               }))
             }
+            renderLabel={(t) => (isSxp && t === 'Outros' ? 'TELA SOLAR' : t.toUpperCase())}
           />
         </StepShell>
       )}
@@ -582,7 +734,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
         <StepShell label="Motor">
           <SelectField
             value={draft.motor}
-            options={MOTORS}
+            options={isSxp ? SXP_SHADE_MOTORS : MOTORS}
             placeholder="Escolha o motor"
             onChange={(v) => setDraft((d) => ({ ...d, motor: v }))}
           />

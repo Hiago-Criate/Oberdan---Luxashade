@@ -45,9 +45,19 @@ export interface ShadeItem {
   widthMm: number;
   heightMm: number;
   quantity: number;
-  // Comando manual (preenchido só quando acionamento === 'MANUAL').
-  comandoLado?: 'Direita' | 'Esquerda';
-  comandoAlturaMm?: number;
+  // Lado do comando (manual) ou do motor (motorizada). Pode ser
+  // 'Direita' | 'Esquerda' | 'Dir./Esq.' (este último para DUPLA/DAYNIGHT).
+  comandoLado?: string;       // só quando acionamento === 'MANUAL'
+  comandoAlturaMm?: number;   // só MANUAL
+  motorLado?: string;         // só quando acionamento !== 'MANUAL'
+  // Módulos (produtos "DUPLA"). Se assimétrico, informa largura de cada módulo.
+  modulosAssimetricos?: boolean;
+  moduloLargEsqMm?: number;
+  moduloLargDirMm?: number;
+  // Instalação: alinhamento com outras peças do pedido.
+  mesmoAmbiente?: boolean;
+  ladoALado?: boolean;
+  ladoALadoCom?: string;
   // Acessórios opcionais (ShadeXP). Já listados com o total unitário.
   opcionais?: OpcionalEscolhido[];
   opcionaisTotal?: number;

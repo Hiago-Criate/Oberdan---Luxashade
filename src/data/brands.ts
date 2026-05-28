@@ -1,5 +1,5 @@
 // Marcas (Luxashade vs ShadeXP). Cada marca expõe um subconjunto das famílias
-// catalogadas em shadeCatalog.ts. Trilho motorizado fica disponível só na Luxashade.
+// catalogadas em shadeCatalog.ts.
 
 export type Brand = 'luxashade' | 'shadexp';
 
@@ -29,6 +29,7 @@ export const FAMILIES_BY_BRAND: Record<Brand, readonly string[]> = {
     'SOFT SHADE',
   ],
   shadexp: [
+    TRILHO_OPT,
     'ROLO',
     'DOUBLE VISION',
     'ROMANA',
@@ -40,6 +41,7 @@ export const FAMILIES_BY_BRAND: Record<Brand, readonly string[]> = {
 // Nomes "vendáveis" para exibir no menu (ROLO → ROLÔ, etc.).
 export const FAMILY_DISPLAY: Record<string, string> = {
   ROLO: 'ROLÔ',
+  [TRILHO_OPT]: 'TRILHOS',
 };
 
 export function brandFromFamilia(familia: string): Brand {

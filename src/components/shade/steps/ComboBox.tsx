@@ -15,12 +15,25 @@ interface Props {
 export function ComboBox({ value, options, placeholder, disabled, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [dropUp, setDropUp] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
 
   // Sync query quando value muda externamente.
   useEffect(() => {
     if (!open) setQuery('');
   }, [open]);
+
+  // Abre pra cima quando não há espaço suficiente abaixo (footer fixo cobre).
+  const handleToggle = () => {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      // Painel: busca (~52px) + lista (até ~224px) + folga p/ footer fixo (~150px).
+      setDropUp(spaceBelow < 360);
+    }
+    setOpen((v) => !v);
+  };
 
   // Fecha ao clicar fora.
   useEffect(() => {
@@ -42,16 +55,17 @@ export function ComboBox({ value, options, placeholder, disabled, onChange }: Pr
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={btnRef}
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
+        onClick={handleToggle}
         className={cn(
           'w-full bg-white border border-zinc-200 p-4 rounded-2xl text-left flex items-center justify-between gap-2',
           'focus:outline-none focus:ring-2 focus:ring-zinc-900/5',
           disabled && 'bg-zinc-50 text-zinc-400 cursor-not-allowed',
         )}
       >
-        <span className={cn('truncate', !value && 'text-zinc-400')}>
+        <span className={cn('flex-1 text-left break-words leading-snug text-sm', !value && 'text-zinc-400')}>
           {value || placeholder || 'Selecione…'}
         </span>
         <ChevronDown
@@ -61,7 +75,12 @@ export function ComboBox({ value, options, placeholder, disabled, onChange }: Pr
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-2 left-0 right-0 bg-white border border-zinc-200 rounded-2xl shadow-xl shadow-zinc-200/60 overflow-hidden">
+        <div
+          className={cn(
+            'absolute z-50 left-0 right-0 bg-white border border-zinc-200 rounded-2xl shadow-xl shadow-zinc-200/60 overflow-hidden',
+            dropUp ? 'bottom-full mb-2' : 'top-full mt-2',
+          )}
+        >
           <div className="relative border-b border-zinc-100">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input
@@ -95,7 +114,7 @@ export function ComboBox({ value, options, placeholder, disabled, onChange }: Pr
                   setQuery('');
                 }}
                 className={cn(
-                  'w-full text-left px-4 py-2.5 text-sm transition-colors',
+                  'w-full text-left px-4 py-2.5 text-sm transition-colors break-words leading-snug',
                   o === value
                     ? 'bg-zinc-900 text-white'
                     : 'hover:bg-zinc-50 text-zinc-700',

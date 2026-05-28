@@ -353,7 +353,7 @@ interface CartItemProps {
 }
 
 function CartItemCard({ item, onEdit, onRemove }: CartItemProps) {
-  const title = item.kind === 'trilho' ? item.model : `${item.familia} · ${item.modelo}`;
+  const title = item.kind === 'trilho' ? item.model : item.modelo;
   const subtitle =
     item.kind === 'trilho'
       ? item.environment || 'Sem ambiente'
@@ -376,7 +376,7 @@ function CartItemCard({ item, onEdit, onRemove }: CartItemProps) {
           )}>
             {item.productCategory}
           </p>
-          <h3 className="font-medium text-zinc-800 truncate">{title}</h3>
+          <h3 className="font-medium text-zinc-800 text-sm leading-snug break-words">{title}</h3>
           <p className="text-zinc-400 text-xs truncate">{subtitle}</p>
           {item.kind === 'shade' && (
             <p className="text-zinc-400 text-[10px] font-mono mt-1">{item.codigo}</p>
@@ -390,12 +390,39 @@ function CartItemCard({ item, onEdit, onRemove }: CartItemProps) {
         <span>{dims}</span>
         <span>•</span>
         <span>{item.quantity} un</span>
-        {item.kind === 'shade' && item.comandoLado && item.comandoAlturaMm ? (
+        {item.kind === 'shade' && item.comandoLado && (
           <>
             <span>•</span>
-            <span>Comando {item.comandoLado} {item.comandoAlturaMm}mm</span>
+            <span>
+              Comando {item.comandoLado}
+              {item.comandoAlturaMm ? ` ${item.comandoAlturaMm}mm` : ''}
+            </span>
           </>
-        ) : null}
+        )}
+        {item.kind === 'shade' && item.motorLado && (
+          <>
+            <span>•</span>
+            <span>Motor {item.motorLado}</span>
+          </>
+        )}
+        {item.kind === 'shade' && item.modulosAssimetricos && item.moduloLargEsqMm && item.moduloLargDirMm && (
+          <>
+            <span>•</span>
+            <span>Mód. E {item.moduloLargEsqMm} / D {item.moduloLargDirMm}mm</span>
+          </>
+        )}
+        {item.kind === 'shade' && item.mesmoAmbiente && (
+          <>
+            <span>•</span>
+            <span>Mesmo ambiente</span>
+          </>
+        )}
+        {item.kind === 'shade' && item.ladoALado && (
+          <>
+            <span>•</span>
+            <span>Lado a lado{item.ladoALadoCom ? `: ${item.ladoALadoCom}` : ''}</span>
+          </>
+        )}
       </div>
       {item.kind === 'shade' && item.opcionais && item.opcionais.length > 0 && (
         <div className="bg-zinc-50 rounded-2xl px-3 py-2 space-y-1">
