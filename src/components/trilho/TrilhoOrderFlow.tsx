@@ -31,10 +31,10 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
       quantity: 1,
       width: '',
       height: '',
-      opening: OPENINGS[0],
-      railColor: COLORS[0],
-      motorSide: MOTOR_SIDES[0],
-      motor: MOTORS[6], // SEM MOTOR (INFORMATIVO)
+      opening: '',
+      railColor: '',
+      motorSide: '',
+      motor: '',
       price: 0,
     },
   );
@@ -51,6 +51,7 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
   }, [item.model, item.opening, item.railColor, item.width, item.motor, item.quantity]);
 
   const handleAdd = () => {
+    if (!item.opening || !item.railColor || !item.motorSide || !item.motor) return;
     const finalItem: TrilhoItem = {
       kind: 'trilho',
       id: initialItem?.id ?? Math.random().toString(36).slice(2, 11),
@@ -61,10 +62,10 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
       quantity: item.quantity ?? 1,
       width: item.width ?? '',
       height: item.height ?? '',
-      opening: item.opening ?? OPENINGS[0],
-      railColor: item.railColor ?? COLORS[0],
-      motorSide: item.motorSide ?? MOTOR_SIDES[0],
-      motor: item.motor ?? MOTORS[6],
+      opening: item.opening,
+      railColor: item.railColor,
+      motorSide: item.motorSide,
+      motor: item.motor,
       price: item.price ?? 0,
     };
     onSave(finalItem);
@@ -207,8 +208,12 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
           <select
             value={item.motor}
             onChange={(e) => setItem({ ...item, motor: e.target.value })}
-            className="w-full appearance-none bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5 text-sm"
+            className={cn(
+              'w-full appearance-none bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5 text-sm',
+              !item.motor && 'text-zinc-400',
+            )}
           >
+            <option value="">Escolha o motor</option>
             {MOTORS.map((m) => (
               <option key={m} value={m}>{m}</option>
             ))}
@@ -226,7 +231,8 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
         </div>
         <button
           onClick={handleAdd}
-          className="bg-zinc-900 text-white px-8 py-4 rounded-2xl font-medium shadow-lg shadow-zinc-200"
+          disabled={!item.opening || !item.railColor || !item.motorSide || !item.motor}
+          className="bg-zinc-900 text-white px-8 py-4 rounded-2xl font-medium shadow-lg shadow-zinc-200 disabled:opacity-40 transition-opacity"
         >
           {initialItem ? 'Salvar' : 'Adicionar'}
         </button>
