@@ -36,7 +36,7 @@ function BrandCard({ brand, title, onClick }: CardProps) {
           <img
             src={brand === 'shadexp' ? '/logo-shadexp.png' : '/logo-luxashade.png'}
             alt={title}
-            className="h-7 object-contain object-left"
+            className="h-12 object-contain object-left"
           />
         </div>
         <p className="text-xs text-zinc-400 mb-3">{BRAND_TAGLINE[brand]}</p>

@@ -87,10 +87,10 @@ export default function App() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <img src="/logo-luxashade.png" alt="Luxashade" className="h-11 object-contain" />
+        <img src="/logo-luxashade.png" alt="Luxashade" className="h-16 object-contain" />
       </motion.div>
       <div className="h-px w-12 bg-zinc-200" />
-      <img src="/logo-shadexp.png" alt="ShadeXP" className="h-5 object-contain opacity-60" />
+      <img src="/logo-shadexp.png" alt="ShadeXP" className="h-8 object-contain opacity-70" />
     </div>
   );
 
