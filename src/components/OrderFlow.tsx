@@ -52,7 +52,7 @@ export function OrderFlow({ brand, initialItem, onSave, onBack }: Props) {
           <img
             src={brand === 'shadexp' ? '/logo-shadexp.png' : '/logo-luxashade.png'}
             alt={BRAND_LABEL[brand]}
-            className="h-4 object-contain object-left mb-1"
+            className="h-16 object-contain object-left mb-1"
           />
           <h2 className="text-xl font-medium">Configurar Item</h2>
         </div>

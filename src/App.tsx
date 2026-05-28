@@ -144,7 +144,7 @@ export default function App() {
                 <img
                   src={brand === 'shadexp' ? '/logo-shadexp.png' : '/logo-luxashade.png'}
                   alt={BRAND_LABEL[brand]}
-                  className="h-5 object-contain object-left"
+                  className="h-28 object-contain object-left"
                 />
                 <h2 className="text-2xl font-light text-zinc-800">Identificação</h2>
                 <p className="text-zinc-500 text-sm">Por favor, informe o CNPJ da empresa</p>
@@ -196,7 +196,7 @@ export default function App() {
                   <img
                     src={brand === 'shadexp' ? '/logo-shadexp.png' : '/logo-luxashade.png'}
                     alt={BRAND_LABEL[brand]}
-                    className="h-4 object-contain object-left mb-2"
+                    className="h-16 object-contain object-left mb-1"
                   />
                   <h2 className="text-2xl font-medium flex items-center gap-2">
                     <ShoppingBag size={24} />
