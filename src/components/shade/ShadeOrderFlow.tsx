@@ -65,8 +65,8 @@ type Draft = {
   // Lado do comando (manual) ou do motor (motorizada). Sem default.
   lado: 'Direita' | 'Esquerda' | '';
   comandoAlturaStr: string;
-  // Módulos (produtos "DUPLA").
-  modulosAssimetricos: boolean;
+  // Módulos (produtos "DUPLA"). null = ainda não respondido (sem pré-seleção).
+  modulosAssimetricos: boolean | null;
   modLargEsqStr: string;
   modLargDirStr: string;
   // Instalação — null = ainda não respondido (sem pré-seleção)
@@ -91,7 +91,7 @@ const emptyDraft = (): Draft => ({
   motor: '',
   lado: '',
   comandoAlturaStr: '',
-  modulosAssimetricos: false,
+  modulosAssimetricos: null,
   modLargEsqStr: '',
   modLargDirStr: '',
   mesmoAmbiente: null,
@@ -120,7 +120,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
             return l === 'Direita' || l === 'Esquerda' ? l : '';
           })(),
           comandoAlturaStr: initialItem.comandoAlturaMm ? String(initialItem.comandoAlturaMm) : '',
-          modulosAssimetricos: initialItem.modulosAssimetricos ?? false,
+          modulosAssimetricos: initialItem.modulosAssimetricos ?? null,
           modLargEsqStr: initialItem.moduloLargEsqMm ? String(initialItem.moduloLargEsqMm) : '',
           modLargDirStr: initialItem.moduloLargDirMm ? String(initialItem.moduloLargDirMm) : '',
           mesmoAmbiente: initialItem.mesmoAmbiente ?? null,
@@ -238,7 +238,10 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
   // Módulos assimétricos — só produtos DUPLA.
   const modEsqMm = Number(draft.modLargEsqStr) || 0;
   const modDirMm = Number(draft.modLargDirStr) || 0;
-  const modulosReady = !isDupla || !draft.modulosAssimetricos || (modEsqMm > 0 && modDirMm > 0);
+  const modulosReady =
+    !isDupla ||
+    (draft.modulosAssimetricos !== null &&
+      (!draft.modulosAssimetricos || (modEsqMm > 0 && modDirMm > 0)));
 
   // Tudo dos "laterais" (lado + altura comando + módulos) pronto.
   const lateraisReady = dimsReady && ladoReady && alturaComandoReady && modulosReady;
@@ -334,7 +337,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
       comandoLado: isManual ? (ladoValue || undefined) : undefined,
       comandoAlturaMm: isManual ? comandoAlturaMm : undefined,
       motorLado: isMotorized ? (ladoValue || undefined) : undefined,
-      modulosAssimetricos: isDupla ? draft.modulosAssimetricos : undefined,
+      modulosAssimetricos: isDupla ? draft.modulosAssimetricos ?? undefined : undefined,
       moduloLargEsqMm: isDupla && draft.modulosAssimetricos ? modEsqMm : undefined,
       moduloLargDirMm: isDupla && draft.modulosAssimetricos ? modDirMm : undefined,
       mesmoAmbiente: draft.mesmoAmbiente || undefined,
@@ -568,7 +571,13 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
           {isDupla && dimsReady && (
             <StepShell label="Módulos">
               <ChipsField
-                value={draft.modulosAssimetricos ? 'Assimétricos' : 'Simétricos'}
+                value={
+                  draft.modulosAssimetricos === null
+                    ? ''
+                    : draft.modulosAssimetricos
+                    ? 'Assimétricos'
+                    : 'Simétricos'
+                }
                 options={['Simétricos', 'Assimétricos']}
                 cols={2}
                 onChange={(v) =>

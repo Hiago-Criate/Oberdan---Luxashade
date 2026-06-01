@@ -138,6 +138,11 @@ export function calculateShadePrice(draft: ShadeDraft): ShadeQuote {
   if (acionamento !== 'MANUAL' && motor) {
     const cor = motorColorFromAcabamento(corAcabamento);
     motorPrice = MOTOR_PRICES[motor]?.[cor] ?? 0;
+    // Peças DUPLA LIVRE têm dois trilhos independentes → cobra 2 motores.
+    // DUPLA TRAVA usa só 1 motor (os trilhos travam juntos).
+    if (/\bDUPLA\b/i.test(modelo) && /\bLIVRE\b/i.test(modelo)) {
+      motorPrice *= 2;
+    }
   }
   const qty = quantity && quantity > 0 ? quantity : 1;
   const price = Math.round((m2Cobrado * vlrM2 + motorPrice + opcionaisTotal) * qty * 100) / 100;
