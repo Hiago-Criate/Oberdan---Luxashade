@@ -308,3 +308,35 @@ Scripts:
 - **Mudar regra de opcional**: editar `sxpOpcionais.ts` (mais o `SXP_CONTROLES_MOTORIZADA` para acessórios de motorizada).
 - **Mudar tela de marca**: editar `BrandPicker.tsx`.
 - **Antes de fechar a sessão**: rodar `npm run lint` e `npm run build` — ambos devem passar.
+
+---
+
+## 13. Painel de Controle (`/admin`) + Supabase
+
+O catálogo deixou de ser **só estático**: agora vive no **Supabase** (projeto `luxashade-painel`, ref `jlfzjhkeebqchfqrdwer`, região `sa-east-1`) e é editável por um painel em `/admin`. Os arquivos `shadeCatalog.ts`, `shadeModelLimits.ts`, `PRODUTOS` (trilho), `motorPrices`, `sxpOpcionais` e `brands` continuam no repo como **fallback** offline.
+
+### Fluxo de dados
+```
+Painel /admin  ──escreve──▶  Supabase (tabelas)  ──get_catalog()──▶  App (boot)  ──▶  Cris/revenda
+                                  ▲                                      │
+                              (RLS: escrita só autenticada)     fallback estático se offline
+```
+
+- **Boot**: `src/main.tsx` chama `hydrateCatalog()` (em `src/data/catalogStore.ts`) antes de renderizar. Busca `rpc('get_catalog')` (1 JSON, ~240 KB gzip, já filtrando fora-de-linha/indisponível e anexando estoque). Se falhar → usa o catálogo estático (`console`: `[catalog] fonte: remote|static`).
+- **Módulos de lógica leem do store** (mesmas assinaturas de antes): `shadeQueries`, `calculatorShade`, `calculator` (trilho), `sxpOpcionais`, `motorPrices` (`getMotors/getSxpShadeMotors/motorPriceFor`), `brands` (`familiesForBrand/familyDisplay/brandTagline`).
+- **`/admin`** (`src/admin/AdminApp.tsx`): detectado em `main.tsx` por `/admin`, `#admin` ou `?admin=1`. Login via Supabase Auth. Abas **Luxashade × ShadeXP** + módulos: Visão geral, **Preços (m²)** (filtro família/modelo + busca + ação em massa), **Dimensões**, **Coleções** (on/off + estoque "Sob Consulta"/"Em falta"), **Cores**, **Trilhos** (componentes editáveis), **Motores**, **Opcionais** (ShadeXP), **Configurações** (app_config em JSON), **Histórico** (audit_log).
+- **Estoque no app**: coleção/cor `indisponivel` → some da seleção; `sob_consulta` → aparece com aviso âmbar "Sob Consulta" (em `ShadeOrderFlow`).
+
+### Acesso ao painel
+- Login inicial: **`admin@luxashade.app`** / **`LuxaShade#2026`** — **troque a senha** (Dashboard Supabase → Authentication, ou criar novo usuário). Signup não está exposto no app.
+
+### Tabelas (schema `public`)
+`marcas, acionamentos, familias, modelos, tipos_tecido, colecoes, cores_tecido, cores_acabamento, estoque_tecido, produtos (8015, preço m²), modelo_limites (45), motores, trilho_modelos/trilho_produtos/trilho_componentes, opcionais/opcional_modelos/opcional_exclusoes, app_config, audit_log`. RLS: **leitura pública, escrita só autenticada**. Triggers de `updated_at` e auditoria.
+
+### Scripts
+- `npx tsx scripts/seed-supabase.ts` — repovoa o Supabase a partir dos arquivos estáticos (idempotente após TRUNCATE). Usa `SUPABASE_ADMIN_PASSWORD`.
+- `npm run build:shade-catalog` — ainda regenera os arquivos estáticos a partir da planilha (úteis como fallback / fonte para re-seed).
+
+### Hardening pendente (opcional)
+- As políticas de escrita são `authenticated` amplas (qualquer logado = admin). Como só existe 1 usuário e o signup não está no app, é seguro hoje; para múltiplos usuários, restringir por e-mail/allowlist.
+- Ativar "Leaked Password Protection" no Auth.

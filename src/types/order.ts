@@ -16,6 +16,8 @@ export interface TrilhoItem {
   railColor: string;
   motorSide: string;
   motor: string;
+  // Observação livre da revenda (campo OBS de cada item do pedido).
+  observacao?: string;
   price: number;
 }
 
@@ -58,6 +60,8 @@ export interface ShadeItem {
   mesmoAmbiente?: boolean;
   ladoALado?: boolean;
   ladoALadoCom?: string;
+  // Observação livre da revenda (campo OBS de cada item do pedido).
+  observacao?: string;
   // Acessórios opcionais (ShadeXP). Já listados com o total unitário.
   opcionais?: OpcionalEscolhido[];
   opcionaisTotal?: number;
@@ -68,7 +72,27 @@ export interface ShadeItem {
   price: number;             // total da peça × quantity (já com opcionais)
 }
 
-export type OrderItem = TrilhoItem | ShadeItem;
+// Emissor / controle remoto. Item independente: a revenda escolhe a marca do
+// motor (Somfy/Ivolve), o emissor disponível para a marca da cortina, a
+// quantidade e identifica na observação em qual canal cada peça é programada.
+export interface EmissorItem {
+  kind: 'emissor';
+  id: string;
+  brand: Brand;
+  productCategory: 'Emissor';
+  ambiente: string;
+  motorBrand: 'SOMFY' | 'IVOLVE';
+  codigo: string;
+  descricao: string;
+  canais: number;
+  quantity: number;
+  valorUnit: number;
+  // Observação: canal de cada item (ex: "Item 01 → canal 3; Item 02 → canal 1").
+  observacao?: string;
+  price: number; // valorUnit × quantity
+}
+
+export type OrderItem = TrilhoItem | ShadeItem | EmissorItem;
 
 // Mapeamento cód -> nome legível da cor de acabamento.
 export const COR_ACAB_NOMES: Record<string, string> = {

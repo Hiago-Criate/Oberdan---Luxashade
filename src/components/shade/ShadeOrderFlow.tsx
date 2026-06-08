@@ -9,15 +9,16 @@ import {
   coresAcabamentoFor,
 } from '../../data/shadeQueries';
 import { calculateShadePrice, getLimits, type ShadeDraft, type ShadeQuote } from '../../utils/calculatorShade';
-import { MOTORS, SXP_SHADE_MOTORS } from '../../utils/motorPrices';
+import { getMotors, getSxpShadeMotors } from '../../utils/motorPrices';
 import { cn } from '../../utils/cn';
 import { COR_ACAB_NOMES, type OpcionalEscolhido, type ShadeItem } from '../../types/order';
 import type { Brand } from '../../data/brands';
+import { estoqueColecaoMap, estoqueCorMap } from '../../data/catalogStore';
 import {
   calcOpcionalPrice,
   opcionaisFor,
   requiresAltura4xLargura,
-  SXP_ALTURAS_COMANDO_MM,
+  getSxpAlturasComando,
 } from '../../data/sxpOpcionais';
 import { StepShell } from './steps/StepShell';
 import { SelectField } from './steps/SelectField';
@@ -73,6 +74,8 @@ type Draft = {
   mesmoAmbiente: boolean | null;
   ladoALado: boolean | null;
   ladoALadoCom: string;
+  // Observação livre da revenda (campo OBS de cada item).
+  observacao: string;
   // Opcionais selecionados (set de códigos).
   opcionais: Set<string>;
 };
@@ -97,6 +100,7 @@ const emptyDraft = (): Draft => ({
   mesmoAmbiente: null,
   ladoALado: null,
   ladoALadoCom: '',
+  observacao: '',
   opcionais: new Set<string>(),
 });
 
@@ -126,6 +130,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
           mesmoAmbiente: initialItem.mesmoAmbiente ?? null,
           ladoALado: initialItem.ladoALado ?? null,
           ladoALadoCom: initialItem.ladoALadoCom ?? '',
+          observacao: initialItem.observacao ?? '',
           opcionais: new Set(initialItem.opcionais?.map((o) => o.codigo) ?? []),
         }
       : emptyDraft(),
@@ -208,6 +213,12 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
   // Limites do modelo selecionado (para hint nos inputs).
   const limits = getLimits(familia, draft.acionamento, draft.modelo);
 
+  // Estoque (Sob Consulta) da coleção / cor selecionadas.
+  const estCol = useMemo(() => estoqueColecaoMap(), []);
+  const estCor = useMemo(() => estoqueCorMap(), []);
+  const colecaoSobConsulta = !!draft.colecao && estCol[draft.colecao] === 'sob_consulta';
+  const corSobConsulta = !!draft.corTecido && estCor[draft.corTecido] === 'sob_consulta';
+
   // Validações de dimensão (independentes do quote completo).
   const widthInvalid =
     !!(limits && widthMm > 0 && (widthMm < limits.largMin || widthMm > limits.largMax));
@@ -248,8 +259,8 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
 
   // Opcionais aplicáveis (ShadeXP). Só calcula depois que modelo está escolhido.
   const opcionaisAplicaveis = useMemo(
-    () => (isSxp && draft.modelo ? opcionaisFor(draft.modelo, draft.acionamento) : []),
-    [isSxp, draft.modelo, draft.acionamento],
+    () => (isSxp && draft.modelo ? opcionaisFor(draft.modelo) : []),
+    [isSxp, draft.modelo],
   );
   // Resolve quais foram efetivamente escolhidos com valor calculado.
   const opcionaisEscolhidos: OpcionalEscolhido[] = useMemo(() => {
@@ -343,6 +354,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
       mesmoAmbiente: draft.mesmoAmbiente || undefined,
       ladoALado: draft.ladoALado || undefined,
       ladoALadoCom: draft.ladoALado && draft.ladoALadoCom ? draft.ladoALadoCom : undefined,
+      observacao: draft.observacao.trim() || undefined,
       opcionais: opcionaisEscolhidos.length ? opcionaisEscolhidos : undefined,
       opcionaisTotal: opcionaisEscolhidos.length ? opcionaisTotal : undefined,
       codigo: quote.codigo,
@@ -536,7 +548,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
             >
               {isSxp ? (
                 <div className="grid grid-cols-4 gap-2">
-                  {SXP_ALTURAS_COMANDO_MM.map((mm) => {
+                  {getSxpAlturasComando().map((mm) => {
                     const active = comandoAlturaMm === mm;
                     return (
                       <button
@@ -710,6 +722,15 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
               setDraft((d) => ({ ...d, colecao: v, corTecido: '', corAcabamento: '' }))
             }
           />
+          {colecaoSobConsulta && (
+            <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+              <span className="text-sm">⚠️</span>
+              <p className="text-[11px] leading-snug text-amber-700">
+                <span className="font-semibold">Sob Consulta</span> — esta coleção está com estoque
+                baixo. Confirme a disponibilidade antes de fechar o pedido.
+              </p>
+            </div>
+          )}
         </StepShell>
       )}
 
@@ -722,6 +743,15 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
             placeholder="Escolha a cor do tecido"
             onChange={(v) => setDraft((d) => ({ ...d, corTecido: v, corAcabamento: '' }))}
           />
+          {corSobConsulta && (
+            <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+              <span className="text-sm">⚠️</span>
+              <p className="text-[11px] leading-snug text-amber-700">
+                <span className="font-semibold">Sob Consulta</span> — esta cor está com estoque
+                baixo. Confirme a disponibilidade antes de fechar o pedido.
+              </p>
+            </div>
+          )}
         </StepShell>
       )}
 
@@ -743,7 +773,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
         <StepShell label="Motor">
           <SelectField
             value={draft.motor}
-            options={isSxp ? SXP_SHADE_MOTORS : MOTORS}
+            options={isSxp ? getSxpShadeMotors() : getMotors()}
             placeholder="Escolha o motor"
             onChange={(v) => setDraft((d) => ({ ...d, motor: v }))}
           />
@@ -763,6 +793,19 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
             heightMm={heightMm}
             comandoAlturaMm={comandoAlturaMm}
             onToggle={toggleOpcional}
+          />
+        </StepShell>
+      )}
+
+      {/* 11. Observação (OBS) — campo livre, no final do item */}
+      {draft.modelo && limits && lateraisReady && (
+        <StepShell label="Observação" hint="(Opcional) Notas sobre este item para a produção.">
+          <textarea
+            rows={2}
+            placeholder="Ex: detalhe de instalação, referência do ambiente, etc."
+            value={draft.observacao}
+            onChange={(e) => setDraft((d) => ({ ...d, observacao: e.target.value }))}
+            className="w-full bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5 resize-none"
           />
         </StepShell>
       )}

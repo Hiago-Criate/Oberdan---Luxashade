@@ -62,7 +62,8 @@ export default function App() {
     setLoading(true);
     try {
       await axios.post(WEBHOOK_URL, {
-        schemaVersion: 2,
+        // v3: novo item kind 'emissor' + campo 'observacao' (OBS) em cada item.
+        schemaVersion: 3,
         tipo: tipoEnvio,
         marca: brand,
         cnpj,
@@ -356,14 +357,24 @@ interface CartItemProps {
 }
 
 function CartItemCard({ item, onEdit, onRemove }: CartItemProps) {
-  const title = item.kind === 'trilho' ? item.model : item.modelo;
+  const title =
+    item.kind === 'trilho'
+      ? item.model
+      : item.kind === 'emissor'
+      ? item.descricao
+      : item.modelo;
   const subtitle =
     item.kind === 'trilho'
       ? item.environment || 'Sem ambiente'
+      : item.kind === 'emissor'
+      ? item.ambiente || 'Emissor / Controle'
       : item.ambiente || `${item.colecao} · ${item.corTecido}`;
+  const canaisLabel = (n: number) => `${n} ${n === 1 ? 'canal' : 'canais'}`;
   const dims =
     item.kind === 'trilho'
       ? `${item.width || 0}x${item.height || 0}mm`
+      : item.kind === 'emissor'
+      ? `${item.motorBrand} · ${canaisLabel(item.canais)}`
       : `${item.widthMm}x${item.heightMm}mm`;
 
   return (
@@ -375,13 +386,17 @@ function CartItemCard({ item, onEdit, onRemove }: CartItemProps) {
         <div className="min-w-0">
           <p className={cn(
             'text-[10px] uppercase tracking-widest font-semibold',
-            item.kind === 'trilho' ? 'text-amber-600' : 'text-emerald-600',
+            item.kind === 'trilho'
+              ? 'text-amber-600'
+              : item.kind === 'emissor'
+              ? 'text-violet-600'
+              : 'text-emerald-600',
           )}>
             {item.productCategory}
           </p>
           <h3 className="font-medium text-zinc-800 text-sm leading-snug break-words">{title}</h3>
           <p className="text-zinc-400 text-xs truncate">{subtitle}</p>
-          {item.kind === 'shade' && (
+          {(item.kind === 'shade' || item.kind === 'emissor') && (
             <p className="text-zinc-400 text-[10px] font-mono mt-1">{item.codigo}</p>
           )}
         </div>
@@ -427,6 +442,14 @@ function CartItemCard({ item, onEdit, onRemove }: CartItemProps) {
           </>
         )}
       </div>
+      {item.observacao && (
+        <div className="bg-zinc-50 rounded-2xl px-3 py-2">
+          <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-semibold mb-0.5">
+            Observação
+          </p>
+          <p className="text-[11px] text-zinc-600 whitespace-pre-wrap break-words">{item.observacao}</p>
+        </div>
+      )}
       {item.kind === 'shade' && item.opcionais && item.opcionais.length > 0 && (
         <div className="bg-zinc-50 rounded-2xl px-3 py-2 space-y-1">
           <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-semibold">

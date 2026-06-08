@@ -1,18 +1,10 @@
-// Cálculo de preço para as 10 famílias de cortinas (Shade).
-// Preço = max(m², m²Min) × Vlr m² × quantidade + motor (se Motorizada/Motor Bateria).
+// Cálculo de preço para as cortinas (Shade).
+// Preço = max(m², m²Min) × Vlr m² × quantidade + motor + opcionais.
+// Lê do catálogo ATIVO (Supabase com fallback estático) via catalogStore.
 
-import {
-  ROWS,
-  FAMILIAS,
-  ACIONAMENTOS,
-  MODELOS,
-  TIPOS_TECIDO,
-  COLECOES,
-  CORES_TECIDO,
-  CORES_ACAB,
-} from '../data/shadeCatalog';
-import { SHADE_MODEL_LIMITS } from '../data/shadeModelLimits';
-import { MOTOR_PRICES } from './motorPrices';
+import { activeProducts, activeLimits } from '../data/catalogStore';
+import type { ModelLimits } from '../data/shadeModelLimits';
+import { motorPriceFor } from './motorPrices';
 import { motorColorFromAcabamento } from '../types/order';
 
 export type ShadeDraft = {
@@ -27,7 +19,7 @@ export type ShadeDraft = {
   widthMm?: number;
   heightMm?: number;
   quantity?: number;
-  opcionaisTotal?: number; // soma já calculada por peça (vinda do form)
+  opcionaisTotal?: number;
 };
 
 export type ShadeQuote =
@@ -39,7 +31,7 @@ export type ShadeQuote =
       vlrM2: number;
       codigo: string;
       motorPrice: number;
-      limits: NonNullable<ReturnType<typeof getLimits>>;
+      limits: ModelLimits;
     }
   | {
       ok: false;
@@ -50,38 +42,31 @@ export type ShadeQuote =
         | 'ALTURA_INVALIDA'
         | 'AREA_EXCEDIDA'
         | 'SEM_PRODUTO';
-      limits?: NonNullable<ReturnType<typeof getLimits>>;
+      limits?: ModelLimits;
       m2?: number;
     };
 
-export function getLimits(familia?: string, acionamento?: string, modelo?: string) {
+export function getLimits(familia?: string, acionamento?: string, modelo?: string): ModelLimits | null {
   if (!familia || !acionamento || !modelo) return null;
-  return SHADE_MODEL_LIMITS[`${familia}|${acionamento}|${modelo}`] ?? null;
+  return activeLimits()[`${familia}|${acionamento}|${modelo}`] ?? null;
 }
 
-function findRow(
-  famIdx: number,
-  acionIdx: number,
-  modeloIdx: number,
-  tipoIdx: number,
-  colIdx: number,
-  corTecIdx: number,
-  corAcabIdx: number,
-) {
-  for (const r of ROWS) {
-    if (
-      r[0] === famIdx &&
-      r[1] === acionIdx &&
-      r[2] === modeloIdx &&
-      r[3] === tipoIdx &&
-      r[4] === colIdx &&
-      r[5] === corTecIdx &&
-      r[6] === corAcabIdx
-    ) {
-      return r;
-    }
-  }
-  return null;
+function findProduct(d: {
+  familia: string; acionamento: string; modelo: string; tipoTecido: string;
+  colecao: string; corTecido: string; corAcabamento: string;
+}) {
+  return (
+    activeProducts().find(
+      (p) =>
+        p.familia === d.familia &&
+        p.acionamento === d.acionamento &&
+        p.modelo === d.modelo &&
+        p.tipo === d.tipoTecido &&
+        p.colecao === d.colecao &&
+        p.corTecido === d.corTecido &&
+        p.corAcab === d.corAcabamento,
+    ) ?? null
+  );
 }
 
 export function calculateShadePrice(draft: ShadeDraft): ShadeQuote {
@@ -113,33 +98,18 @@ export function calculateShadePrice(draft: ShadeDraft): ShadeQuote {
     return { ok: false, reason: 'AREA_EXCEDIDA', limits, m2 };
   }
 
-  const famIdx = FAMILIAS.indexOf(familia);
-  const acionIdx = ACIONAMENTOS.indexOf(acionamento);
-  const modeloIdx = MODELOS.indexOf(modelo);
-  const tipoIdx = TIPOS_TECIDO.indexOf(tipoTecido);
-  const colIdx = COLECOES.indexOf(colecao);
-  const corTecIdx = CORES_TECIDO.indexOf(corTecido);
-  const corAcabIdx = CORES_ACAB.indexOf(corAcabamento);
-  if (
-    famIdx < 0 || acionIdx < 0 || modeloIdx < 0 || tipoIdx < 0 ||
-    colIdx < 0 || corTecIdx < 0 || corAcabIdx < 0
-  ) {
-    return { ok: false, reason: 'SEM_PRODUTO', limits, m2 };
-  }
+  const prod = findProduct({ familia, acionamento, modelo, tipoTecido, colecao, corTecido, corAcabamento });
+  if (!prod) return { ok: false, reason: 'SEM_PRODUTO', limits, m2 };
 
-  const row = findRow(famIdx, acionIdx, modeloIdx, tipoIdx, colIdx, corTecIdx, corAcabIdx);
-  if (!row) return { ok: false, reason: 'SEM_PRODUTO', limits, m2 };
-
-  const vlrM2 = row[7];
-  const codigo = row[8];
+  const vlrM2 = prod.vlrM2;
+  const codigo = prod.codigo;
 
   const m2Cobrado = Math.max(m2, limits.m2Min);
   let motorPrice = 0;
   if (acionamento !== 'MANUAL' && motor) {
     const cor = motorColorFromAcabamento(corAcabamento);
-    motorPrice = MOTOR_PRICES[motor]?.[cor] ?? 0;
-    // Peças DUPLA LIVRE têm dois trilhos independentes → cobra 2 motores.
-    // DUPLA TRAVA usa só 1 motor (os trilhos travam juntos).
+    motorPrice = motorPriceFor(motor, cor);
+    // DUPLA LIVRE = 2 trilhos independentes → 2 motores. DUPLA TRAVA = 1 motor.
     if (/\bDUPLA\b/i.test(modelo) && /\bLIVRE\b/i.test(modelo)) {
       motorPrice *= 2;
     }

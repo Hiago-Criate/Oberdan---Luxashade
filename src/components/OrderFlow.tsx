@@ -3,13 +3,15 @@ import { motion } from 'motion/react';
 import { ArrowLeft } from 'lucide-react';
 import { TrilhoOrderFlow } from './trilho/TrilhoOrderFlow';
 import { ShadeOrderFlow } from './shade/ShadeOrderFlow';
+import { EmissorOrderFlow } from './emissor/EmissorOrderFlow';
 import { SelectField } from './shade/steps/SelectField';
 import { StepShell } from './shade/steps/StepShell';
 import {
   BRAND_LABEL,
-  FAMILIES_BY_BRAND,
-  FAMILY_DISPLAY,
+  familiesForBrand,
+  familyDisplay,
   TRILHO_OPT,
+  EMISSOR_OPT,
   type Brand,
 } from '../data/brands';
 import type { OrderItem } from '../types/order';
@@ -24,12 +26,14 @@ interface Props {
 // Wrapper único: a primeira pergunta é "Categoria", restrita às famílias
 // da marca selecionada. Conforme a escolha, mostra o sub-fluxo apropriado.
 export function OrderFlow({ brand, initialItem, onSave, onBack }: Props) {
-  const familiesForBrand = FAMILIES_BY_BRAND[brand];
+  const familiasMarca = familiesForBrand(brand);
 
   const [categoria, setCategoria] = useState<string>(
     initialItem
       ? initialItem.kind === 'trilho'
         ? TRILHO_OPT
+        : initialItem.kind === 'emissor'
+        ? EMISSOR_OPT
         : initialItem.familia
       : '',
   );
@@ -61,10 +65,10 @@ export function OrderFlow({ brand, initialItem, onSave, onBack }: Props) {
       <StepShell label="Categoria">
         <SelectField
           value={categoria}
-          options={familiesForBrand as string[]}
+          options={familiasMarca}
           placeholder="Escolha a categoria"
           onChange={(v) => setCategoria(v)}
-          renderLabel={(v) => FAMILY_DISPLAY[v] ?? v}
+          renderLabel={(v) => familyDisplay(v)}
         />
       </StepShell>
 
@@ -77,7 +81,16 @@ export function OrderFlow({ brand, initialItem, onSave, onBack }: Props) {
         />
       )}
 
-      {categoria && categoria !== TRILHO_OPT && (
+      {categoria === EMISSOR_OPT && (
+        <EmissorOrderFlow
+          key={subKey}
+          brand={brand}
+          initialItem={initialItem?.kind === 'emissor' ? initialItem : null}
+          onSave={onSave}
+        />
+      )}
+
+      {categoria && categoria !== TRILHO_OPT && categoria !== EMISSOR_OPT && (
         <ShadeOrderFlow
           key={subKey}
           brand={brand}

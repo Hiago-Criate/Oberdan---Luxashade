@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
-import { calculatePrice } from '../../utils/calculator';
-import { MOTORS } from '../../utils/motorPrices';
+import { calculatePrice, getTrilhoModelNames } from '../../utils/calculator';
+import { getMotors } from '../../utils/motorPrices';
 import { cn } from '../../utils/cn';
 import type { TrilhoItem } from '../../types/order';
 import type { Brand } from '../../data/brands';
 
-const MODELS = ['Prega', 'Modelo movimento', 'Wave 2.4', 'Wave 3.4', 'Wave 1.7', 'Wave 2.7'];
 const OPENINGS = ['Lateral esquerdo', 'Lateral direita', 'Central'];
 const COLORS = ['Branco', 'Preto'];
 const MOTOR_SIDES = ['Direito', 'Esquerdo'];
@@ -21,6 +20,7 @@ interface Props {
 // Corpo do form de Trilho Motorizado. A Categoria é selecionada no wrapper
 // (OrderFlow) então aqui não mostramos o cabeçalho nem o "Categoria: Trilho".
 export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
+  const MODELS = getTrilhoModelNames();
   const [item, setItem] = useState<Partial<TrilhoItem>>(
     initialItem ?? {
       kind: 'trilho',
@@ -35,6 +35,7 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
       railColor: '',
       motorSide: '',
       motor: '',
+      observacao: '',
       price: 0,
     },
   );
@@ -66,6 +67,7 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
       railColor: item.railColor,
       motorSide: item.motorSide,
       motor: item.motor,
+      observacao: item.observacao?.trim() || undefined,
       price: item.price ?? 0,
     };
     onSave(finalItem);
@@ -214,12 +216,23 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
             )}
           >
             <option value="">Escolha o motor</option>
-            {MOTORS.map((m) => (
+            {getMotors().map((m) => (
               <option key={m} value={m}>{m}</option>
             ))}
           </select>
           <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={18} />
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Observação</label>
+        <textarea
+          rows={2}
+          placeholder="(Opcional) Notas sobre este item para a produção."
+          value={item.observacao ?? ''}
+          onChange={(e) => setItem({ ...item, observacao: e.target.value })}
+          className="w-full bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5 resize-none"
+        />
       </div>
 
       <div className="fixed bottom-0 left-0 w-full bg-white border-t border-zinc-100 p-6 flex items-center justify-between z-40">

@@ -1,7 +1,7 @@
 import { motion } from 'motion/react';
 import { ArrowRight } from 'lucide-react';
 import type { Brand } from '../data/brands';
-import { BRAND_TAGLINE, FAMILIES_BY_BRAND, FAMILY_DISPLAY } from '../data/brands';
+import { brandTagline, familiesForBrand, familyDisplay } from '../data/brands';
 import { cn } from '../utils/cn';
 
 interface Props {
@@ -16,9 +16,9 @@ interface CardProps {
 }
 
 function BrandCard({ brand, title, onClick }: CardProps) {
-  const families = FAMILIES_BY_BRAND[brand];
+  const families = familiesForBrand(brand);
   // Preview das primeiras 4 famílias (com nome legível). Mostra "..." se sobrar.
-  const preview = families.slice(0, 4).map((f) => FAMILY_DISPLAY[f] ?? f);
+  const preview = families.slice(0, 4).map((f) => familyDisplay(f));
   const more = families.length - preview.length;
 
   return (
@@ -39,7 +39,7 @@ function BrandCard({ brand, title, onClick }: CardProps) {
             className="h-32 object-contain object-left"
           />
         </div>
-        <p className="text-xs text-zinc-400 mb-3">{BRAND_TAGLINE[brand]}</p>
+        <p className="text-xs text-zinc-400 mb-3">{brandTagline(brand)}</p>
         <div className="flex flex-wrap gap-1.5">
           {preview.map((p) => (
             <span
