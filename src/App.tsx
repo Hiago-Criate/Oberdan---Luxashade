@@ -68,7 +68,9 @@ export default function App() {
         marca: brand,
         cnpj,
         customer: userInfo,
-        items: cart,
+        // numeroItem = posição (1-based) na ordem do pedido; é a referência usada
+        // nas observações ("Item 01 → canal 3", "lado a lado com o Item 02").
+        items: cart.map((it, i) => ({ numeroItem: i + 1, ...it })),
         total,
       });
       setStep('success');
@@ -210,10 +212,11 @@ export default function App() {
               </div>
 
               <div className="space-y-4">
-                {cart.map((item) => (
+                {cart.map((item, idx) => (
                   <CartItemCard
                     key={item.id}
                     item={item}
+                    numero={idx + 1}
                     onEdit={() => handleEdit(item)}
                     onRemove={() => handleRemove(item.id)}
                   />
@@ -243,14 +246,14 @@ export default function App() {
                     onClick={() => { setTipoEnvio('orcamento'); setStep('final'); }}
                     className="bg-white text-zinc-900 border border-zinc-300 py-4 rounded-2xl font-medium disabled:opacity-50 hover:bg-zinc-50 transition-colors"
                   >
-                    Fazer Orçamento
+                    Gerar Orçamento
                   </button>
                   <button
                     disabled={cart.length === 0}
                     onClick={() => { setTipoEnvio('pedido'); setStep('final'); }}
-                    className="bg-zinc-900 text-white py-4 rounded-2xl font-medium shadow-lg shadow-zinc-200 disabled:opacity-50"
+                    className="bg-zinc-900 text-white py-4 rounded-2xl font-medium shadow-lg shadow-zinc-200 disabled:opacity-50 leading-tight"
                   >
-                    Finalizar Pedido
+                    Gerar Pedido na Fábrica
                   </button>
                 </div>
               </div>
@@ -352,11 +355,12 @@ export default function App() {
 
 interface CartItemProps {
   item: OrderItem;
+  numero: number;
   onEdit: () => void;
   onRemove: () => void;
 }
 
-function CartItemCard({ item, onEdit, onRemove }: CartItemProps) {
+function CartItemCard({ item, numero, onEdit, onRemove }: CartItemProps) {
   const title =
     item.kind === 'trilho'
       ? item.model
@@ -384,15 +388,20 @@ function CartItemCard({ item, onEdit, onRemove }: CartItemProps) {
     >
       <div className="flex justify-between items-start gap-3">
         <div className="min-w-0">
-          <p className={cn(
-            'text-[10px] uppercase tracking-widest font-semibold',
-            item.kind === 'trilho'
-              ? 'text-amber-600'
-              : item.kind === 'emissor'
-              ? 'text-violet-600'
-              : 'text-emerald-600',
-          )}>
-            {item.productCategory}
+          <p className="text-[10px] uppercase tracking-widest font-semibold flex items-center gap-1.5">
+            <span className="text-zinc-900">Item {String(numero).padStart(2, '0')}</span>
+            <span className="text-zinc-300">·</span>
+            <span
+              className={cn(
+                item.kind === 'trilho'
+                  ? 'text-amber-600'
+                  : item.kind === 'emissor'
+                  ? 'text-violet-600'
+                  : 'text-emerald-600',
+              )}
+            >
+              {item.productCategory}
+            </span>
           </p>
           <h3 className="font-medium text-zinc-800 text-sm leading-snug break-words">{title}</h3>
           <p className="text-zinc-400 text-xs truncate">{subtitle}</p>
