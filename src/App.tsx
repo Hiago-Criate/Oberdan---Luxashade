@@ -16,6 +16,7 @@ import { OrderFlow } from './components/OrderFlow';
 import { BrandPicker } from './components/BrandPicker';
 import { BRAND_LABEL, type Brand } from './data/brands';
 import { cn } from './utils/cn';
+import { generateOrcamentoPdf, type OrcamentoPdf } from './utils/orcamentoPdf';
 import type { OrderItem } from './types/order';
 
 type Step = 'landing' | 'brand' | 'cnpj' | 'order' | 'cart' | 'final' | 'success';
@@ -61,17 +62,42 @@ export default function App() {
   const handleFinalize = async () => {
     setLoading(true);
     try {
+      const now = new Date();
+      // Nº provisório do documento (o número oficial é atribuído depois no TOTVS).
+      const numero = String(now.getTime()).slice(-6);
+
+      // Gera o PDF do orçamento/pedido no modelo do TOTVS. Se falhar, segue
+      // enviando os dados estruturados (não perde o pedido).
+      let pdf: OrcamentoPdf | null = null;
+      try {
+        pdf = await generateOrcamentoPdf({
+          tipo: tipoEnvio,
+          marca: brand,
+          cnpj,
+          customer: userInfo,
+          items: cart,
+          total,
+          numero,
+          now,
+        });
+      } catch (e) {
+        console.error('PDF generation failed:', e);
+      }
+
       await axios.post(WEBHOOK_URL, {
-        // v3: novo item kind 'emissor' + campo 'observacao' (OBS) em cada item.
-        schemaVersion: 3,
+        // v4: + numeroOrcamento e pdf (base64). v3 trouxe item 'emissor' + observacao.
+        schemaVersion: 4,
         tipo: tipoEnvio,
         marca: brand,
         cnpj,
         customer: userInfo,
+        numeroOrcamento: numero,
         // numeroItem = posição (1-based) na ordem do pedido; é a referência usada
         // nas observações ("Item 01 → canal 3", "lado a lado com o Item 02").
         items: cart.map((it, i) => ({ numeroItem: i + 1, ...it })),
         total,
+        // PDF pronto p/ anexar/encaminhar no n8n (Convert to File a partir do base64).
+        pdf,
       });
       setStep('success');
     } catch (e) {
