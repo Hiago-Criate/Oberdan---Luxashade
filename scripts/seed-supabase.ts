@@ -12,8 +12,9 @@ import { SHADE_MODEL_LIMITS } from '../src/data/shadeModelLimits';
 import { PRODUTOS } from '../src/utils/calculator';
 import { MOTOR_PRICES, MOTORS, SXP_SHADE_MOTORS } from '../src/utils/motorPrices';
 import {
-  SXP_OPCIONAIS_BY_MODEL, SXP_CONTROLES_MOTORIZADA, SXP_ALTURAS_COMANDO_MM,
+  SXP_OPCIONAIS_BY_MODEL, SXP_ALTURAS_COMANDO_MM,
 } from '../src/data/sxpOpcionais';
+import { EMISSORES_FALLBACK } from '../src/data/emissores';
 import {
   FAMILIES_BY_BRAND, FAMILY_DISPLAY, BRAND_TAGLINE, BRAND_LABEL,
   brandFromFamilia, TRILHO_OPT,
@@ -121,6 +122,21 @@ async function main() {
     informativo: /SEM MOTOR/i.test(nome), ordem: i,
   })));
 
+  // ---- Motor × grupo de produtos (modelos MOTORIZADOS) — preserva comportamento ----
+  const { data: motRows } = await sb.from('motores').select('id, nome, uso_trilho, uso_shade');
+  const motorizadosByMarca: Record<'luxashade' | 'shadexp', Set<string>> = { luxashade: new Set(), shadexp: new Set() };
+  for (const r of ROWS) {
+    if (ACIONAMENTOS[r[1] as number] === 'MANUAL') continue;
+    const fam = FAMILIAS[r[0] as number];
+    motorizadosByMarca[brandFromFamilia(fam)].add(MODELOS[r[2] as number]);
+  }
+  const motorModelos: any[] = [];
+  for (const mt of (motRows ?? []) as any[]) {
+    if (mt.uso_shade) for (const m of motorizadosByMarca.shadexp) motorModelos.push({ motor_id: mt.id, modelo: m });
+    if (mt.uso_trilho) for (const m of motorizadosByMarca.luxashade) motorModelos.push({ motor_id: mt.id, modelo: m });
+  }
+  if (motorModelos.length) await insertBatch('motor_modelos', motorModelos);
+
   // ---- Trilhos: modelos ----
   const trilhoModelos: [string, string][] = [
     ['01', 'Prega'], ['02', 'Modelo movimento'], ['03', 'Wave 2.4'],
@@ -151,34 +167,39 @@ async function main() {
   await insertBatch('trilho_produtos', trilhoProdutos);
   await insertBatch('trilho_componentes', trilhoComponentes);
 
-  // ---- Opcionais (ShadeXP) ----
-  let ordemOpc = 0;
+  // ---- Opcionais (ShadeXP) — DEDUPLICADOS por código (cada acessório 1x, ligado a N modelos) ----
+  type Acc = { codigo: string; descricao: string; valor: number; formula: string; obs: string | null; modelos: Set<string>; exclui: Set<string> };
+  const accByCodigo: Record<string, Acc> = {};
   for (const [modelo, rules] of Object.entries(SXP_OPCIONAIS_BY_MODEL)) {
-    const toInsert = rules.map((r) => ({
-      codigo: r.codigo, descricao: r.descricao, valor: r.valor, formula: r.formula,
-      obs: r.obs ?? null, tipo: 'modelo', ordem: ordemOpc++,
-    }));
-    const { data: ins, error } = await sb.from('opcionais').insert(toInsert).select('id');
-    if (error) throw new Error(`opcionais ${modelo}: ${error.message}`);
-    const ids = (ins ?? []).map((row: any) => row.id);
-    const links = ids.map((id) => ({ opcional_id: id, modelo }));
-    if (links.length) {
-      const { error: e2 } = await sb.from('opcional_modelos').insert(links);
-      if (e2) throw new Error(`opcional_modelos ${modelo}: ${e2.message}`);
-    }
-    const excl: any[] = [];
-    rules.forEach((r, idx) => {
-      const id = ids[idx];
-      (r.exclusiveWith ?? []).forEach((cod) => { if (id) excl.push({ opcional_id: id, exclui_codigo: cod }); });
-    });
-    if (excl.length) {
-      const { error: e3 } = await sb.from('opcional_exclusoes').insert(excl);
-      if (e3) throw new Error(`opcional_exclusoes ${modelo}: ${e3.message}`);
+    for (const r of rules) {
+      const a = (accByCodigo[r.codigo] ??= { codigo: r.codigo, descricao: r.descricao, valor: r.valor, formula: r.formula, obs: r.obs ?? null, modelos: new Set(), exclui: new Set() });
+      a.modelos.add(modelo);
+      (r.exclusiveWith ?? []).forEach((c) => a.exclui.add(c));
     }
   }
-  await insertBatch('opcionais', SXP_CONTROLES_MOTORIZADA.map((r) => ({
-    codigo: r.codigo, descricao: r.descricao, valor: r.valor, formula: r.formula,
-    obs: r.obs ?? null, tipo: 'controle_motorizada', ordem: ordemOpc++,
+  const accs = Object.values(accByCodigo);
+  const { data: insOpc, error: eOpc } = await sb.from('opcionais').insert(
+    accs.map((a, i) => ({ codigo: a.codigo, descricao: a.descricao, valor: a.valor, formula: a.formula, obs: a.obs, tipo: 'modelo', ordem: i })),
+  ).select('id, codigo');
+  if (eOpc) throw new Error(`opcionais: ${eOpc.message}`);
+  const idByCodigo: Record<string, number> = {};
+  for (const row of insOpc ?? []) idByCodigo[(row as any).codigo] = (row as any).id;
+  const opcLinks: any[] = [];
+  const opcExcl: any[] = [];
+  for (const a of accs) {
+    for (const m of a.modelos) opcLinks.push({ opcional_id: idByCodigo[a.codigo], modelo: m });
+    for (const c of a.exclui) opcExcl.push({ opcional_id: idByCodigo[a.codigo], exclui_codigo: c });
+  }
+  if (opcLinks.length) await insertBatch('opcional_modelos', opcLinks);
+  if (opcExcl.length) await insertBatch('opcional_exclusoes', opcExcl);
+  console.log(`  ✓ opcionais (deduplicados): ${accs.length}`);
+  // ---- Emissores / controles (entidade própria) ----
+  await insertBatch('emissores', EMISSORES_FALLBACK.map((e, i) => ({
+    codigo: e.codigo, descricao: e.descricao, valor: e.valor, canais: e.canais,
+    motor_brand: e.motorBrand,
+    brand_luxashade: e.brands.includes('luxashade'),
+    brand_shadexp: e.brands.includes('shadexp'),
+    ordem: i,
   })));
 
   // ---- Config geral ----

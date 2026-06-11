@@ -25,6 +25,7 @@ export interface Product {
   corAcab: string;
   vlrM2: number;
   codigo: string;
+  largMaxOverride?: number | null; // largura máx específica do tecido (override do modelo)
 }
 
 export interface RemoteOpcional {
@@ -34,6 +35,15 @@ export interface RemoteOpcional {
   formula: 'fixo' | 'porLargura' | 'porAltura' | 'porAltComando';
   obs?: string | null;
   exclui?: string[];
+}
+
+export interface RemoteEmissor {
+  codigo: string;
+  descricao: string;
+  valor: number;
+  canais: number;
+  motorBrand: string;
+  brands: string[];
 }
 
 export interface RemoteCatalog {
@@ -46,11 +56,12 @@ export interface RemoteCatalog {
   coresAcab: { codigo: string; nome: string; hex: string | null }[];
   products: Product[];
   limites: Record<string, ModelLimits>;
-  motores: { nome: string; branco: number; preto: number; uso_trilho: boolean; uso_shade: boolean; informativo: boolean }[];
+  motores: { nome: string; branco: number; preto: number; uso_trilho: boolean; uso_shade: boolean; informativo: boolean; familias: string[]; modelos: string[] }[];
   trilhoModelos: { codigo: string; nome: string }[];
   trilhoProdutos: { codigo: string; modelo_codigo: string; descricao: string; cor: string; abertura: string; componentes: { c: string; q: number; f: string; v: number }[] }[];
   opcionaisPorModelo: Record<string, RemoteOpcional[]>;
   opcionaisControle: RemoteOpcional[];
+  emissores: RemoteEmissor[];
   estoqueCombo: { colecao: string; cor: string; estoque: EstoqueStatus }[];
   config: Record<string, any>;
 }
@@ -69,6 +80,7 @@ const STATIC_PRODUCTS: Product[] = ROWS.map((r) => ({
   corAcab: normAcab(CORES_ACAB[r[6] as number]),
   vlrM2: r[7] as number,
   codigo: r[8] as string,
+  largMaxOverride: null,
 }));
 
 const STATIC_CORES_ACAB = ['01', '02', '03', '05'];
@@ -131,6 +143,21 @@ export function estoqueCorMap(): Record<string, EstoqueStatus> {
   return out;
 }
 
+// Largura máx específica do tecido (coleção × cor) p/ um modelo — menor override
+// entre os produtos dessa combinação. null = sem restrição (usa o limite do modelo).
+export function fabricMaxWidth(modelo: string, colecao: string, corTecido: string): number | null {
+  let min: number | null = null;
+  for (const p of activeProducts()) {
+    if (
+      p.modelo === modelo && p.colecao === colecao && p.corTecido === corTecido &&
+      p.largMaxOverride != null
+    ) {
+      min = min == null ? p.largMaxOverride : Math.min(min, p.largMaxOverride);
+    }
+  }
+  return min;
+}
+
 // ---------- Hidratação ----------
 export async function hydrateCatalog(): Promise<'remote' | 'static'> {
   try {
@@ -148,6 +175,7 @@ export async function hydrateCatalog(): Promise<'remote' | 'static'> {
       products: (j.produtos ?? []).map((p: any[]) => ({
         familia: p[0], acionamento: p[1], modelo: p[2], tipo: p[3],
         colecao: p[4], corTecido: p[5], corAcab: p[6], vlrM2: Number(p[7]), codigo: p[8],
+        largMaxOverride: p[9] != null ? Number(p[9]) : null,
       })),
       limites: j.limites ?? {},
       motores: j.motores ?? [],
@@ -155,6 +183,7 @@ export async function hydrateCatalog(): Promise<'remote' | 'static'> {
       trilhoProdutos: j.trilho_produtos ?? [],
       opcionaisPorModelo: j.opcionais_por_modelo ?? {},
       opcionaisControle: j.opcionais_controle ?? [],
+      emissores: j.emissores ?? [],
       estoqueCombo: j.estoque_combo ?? [],
       config: j.config ?? {},
     };

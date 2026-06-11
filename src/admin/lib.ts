@@ -57,7 +57,7 @@ export async function fetchProdutos(filtros: {
 }) {
   let q = supabase
     .from('produtos')
-    .select('id, familia, acionamento, modelo, tipo_tecido, colecao, cor_tecido, cor_acab, vlr_m2, codigo, ativo')
+    .select('id, familia, acionamento, modelo, tipo_tecido, colecao, cor_tecido, cor_acab, vlr_m2, codigo, ativo, larg_max')
     .eq('familia', filtros.familia)
     .order('modelo')
     .order('colecao')

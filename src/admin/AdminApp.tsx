@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard, Tag, Ruler, Layers3, Palette, Cpu, Wrench, Settings2,
   History, LogOut, Save, Plus, Trash2, Search, ExternalLink, RefreshCw,
-  AlertTriangle, Check, Lock,
+  AlertTriangle, Check, Lock, RadioTower, X,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { cn } from '../utils/cn';
+import { familyDisplay } from '../data/brands';
 import {
   type Marca, type EstoqueStatus, ESTOQUE_LABEL, money,
   login, logout, fetchAll, updateRow, insertRow, deleteRow, fetchProdutos, distinctFrom,
@@ -24,7 +25,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   );
 }
 
-function NumCell({ value, onCommit, prefix }: { value: number; onCommit: (n: number) => void; prefix?: string }) {
+function NumCell({ value, onCommit, prefix, placeholder }: { value: number | null; onCommit: (n: number) => void; prefix?: string; placeholder?: string }) {
   const [v, setV] = useState(String(value ?? ''));
   useEffect(() => setV(String(value ?? '')), [value]);
   const dirty = String(value ?? '') !== v;
@@ -34,6 +35,7 @@ function NumCell({ value, onCommit, prefix }: { value: number; onCommit: (n: num
       <input
         type="number"
         value={v}
+        placeholder={placeholder}
         onChange={(e) => setV(e.target.value)}
         onBlur={() => { if (dirty) onCommit(Number(v)); }}
         className={cn('w-full rounded-lg border bg-white py-1.5 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-zinc-900/10',
@@ -43,13 +45,14 @@ function NumCell({ value, onCommit, prefix }: { value: number; onCommit: (n: num
   );
 }
 
-function TxtCell({ value, onCommit, placeholder }: { value: string; onCommit: (s: string) => void; placeholder?: string }) {
+function TxtCell({ value, onCommit, placeholder, list }: { value: string; onCommit: (s: string) => void; placeholder?: string; list?: string }) {
   const [v, setV] = useState(value ?? '');
   useEffect(() => setV(value ?? ''), [value]);
   const dirty = (value ?? '') !== v;
   return (
     <input
       value={v}
+      list={list}
       placeholder={placeholder}
       onChange={(e) => setV(e.target.value)}
       onBlur={() => { if (dirty) onCommit(v); }}
@@ -100,6 +103,20 @@ function useToast() {
   return { msg, show };
 }
 
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="font-semibold text-zinc-800">{title}</h3>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700"><X size={18} /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ============================ Login ============================
 function Login({ onOk }: { onOk: () => void }) {
   const [email, setEmail] = useState('admin@luxashade.app');
@@ -139,7 +156,7 @@ function Login({ onOk }: { onOk: () => void }) {
 }
 
 // ============================ Shell ============================
-type ModuleKey = 'overview' | 'precos' | 'dimensoes' | 'colecoes' | 'cores' | 'trilhos' | 'motores' | 'opcionais' | 'config' | 'historico';
+type ModuleKey = 'overview' | 'precos' | 'dimensoes' | 'colecoes' | 'cores' | 'trilhos' | 'motores' | 'emissores' | 'opcionais' | 'config' | 'historico';
 
 const MODULES: { key: ModuleKey; label: string; icon: any }[] = [
   { key: 'overview', label: 'Visão geral', icon: LayoutDashboard },
@@ -149,6 +166,7 @@ const MODULES: { key: ModuleKey; label: string; icon: any }[] = [
   { key: 'cores', label: 'Cores de tecido', icon: Palette },
   { key: 'trilhos', label: 'Trilhos', icon: Wrench },
   { key: 'motores', label: 'Motores', icon: Cpu },
+  { key: 'emissores', label: 'Emissores', icon: RadioTower },
   { key: 'opcionais', label: 'Opcionais', icon: Plus },
   { key: 'config', label: 'Configurações', icon: Settings2 },
   { key: 'historico', label: 'Histórico', icon: History },
@@ -241,7 +259,8 @@ export function AdminApp() {
         {mod === 'colecoes' && <Colecoes brandFamilias={brandFamilias} toast={toast.show} />}
         {mod === 'cores' && <Cores brandFamilias={brandFamilias} toast={toast.show} />}
         {mod === 'trilhos' && <Trilhos toast={toast.show} />}
-        {mod === 'motores' && <Motores toast={toast.show} />}
+        {mod === 'motores' && <Motores marca={marca} brandFamilias={brandFamilias} toast={toast.show} />}
+        {mod === 'emissores' && <Emissores toast={toast.show} />}
         {mod === 'opcionais' && <Opcionais marca={marca} toast={toast.show} />}
         {mod === 'config' && <Config toast={toast.show} />}
         {mod === 'historico' && <Historico />}
@@ -304,8 +323,17 @@ function Precos({ brandFamilias, toast }: { marca: Marca; brandFamilias: string[
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [bulk, setBulk] = useState('');
+  const [bulkLarg, setBulkLarg] = useState('');
+  const [limMap, setLimMap] = useState<Record<string, number>>({});
 
   useEffect(() => { if (brandFamilias.length && !familia) setFamilia(brandFamilias[0]); }, [brandFamilias]);
+  useEffect(() => {
+    fetchAll('modelo_limites').then((ls: any[]) => {
+      const m: Record<string, number> = {};
+      for (const l of ls) m[`${l.familia}|${l.acionamento}|${l.modelo}`] = l.larg_max;
+      setLimMap(m);
+    }).catch(() => {});
+  }, []);
   useEffect(() => {
     if (!familia) return;
     setModelo('');
@@ -326,6 +354,8 @@ function Precos({ brandFamilias, toast }: { marca: Marca; brandFamilias: string[
     return rows.filter((r) => [r.codigo, r.colecao, r.cor_tecido, r.tipo_tecido].some((x) => String(x).toLowerCase().includes(t)));
   }, [rows, busca]);
 
+  const modelMax = (r: any): number | undefined => limMap[`${r.familia}|${r.acionamento}|${r.modelo}`];
+
   const setPreco = async (row: any, v: number) => {
     await updateRow('produtos', row.id, { vlr_m2: v });
     setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, vlr_m2: v } : r)));
@@ -335,6 +365,12 @@ function Precos({ brandFamilias, toast }: { marca: Marca; brandFamilias: string[
     await updateRow('produtos', row.id, { ativo: v });
     setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, ativo: v } : r)));
     toast(v ? 'Produto reativado' : 'Produto fora de linha');
+  };
+  const setLargMax = async (row: any, n: number) => {
+    const v = n > 0 ? n : null;
+    await updateRow('produtos', row.id, { larg_max: v });
+    setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, larg_max: v } : r)));
+    toast(v == null ? 'Larg. máx voltou ao padrão do modelo' : 'Larg. máx do tecido atualizada');
   };
   const applyBulk = async () => {
     const v = Number(bulk);
@@ -346,6 +382,20 @@ function Precos({ brandFamilias, toast }: { marca: Marca; brandFamilias: string[
     setRows((rs) => rs.map((r) => (ids.includes(r.id) ? { ...r, vlr_m2: v } : r)));
     setBulk('');
     toast(`${ids.length} preços atualizados`);
+  };
+  const applyBulkLarg = async (clear = false) => {
+    const v = clear ? null : Number(bulkLarg);
+    if (!clear && !v) return;
+    if (!filtered.length) return;
+    if (!confirm(clear
+      ? `Voltar a Larg. máx ao padrão do modelo em ${filtered.length} produto(s)?`
+      : `Definir Larg. máx de ${v} mm em ${filtered.length} produto(s) filtrado(s)?`)) return;
+    const ids = filtered.map((r) => r.id);
+    const { error } = await supabase.from('produtos').update({ larg_max: v }).in('id', ids);
+    if (error) { toast('Erro ao aplicar'); return; }
+    setRows((rs) => rs.map((r) => (ids.includes(r.id) ? { ...r, larg_max: v } : r)));
+    setBulkLarg('');
+    toast(`${ids.length} produto(s) atualizado(s)`);
   };
 
   return (
@@ -372,21 +422,32 @@ function Precos({ brandFamilias, toast }: { marca: Marca; brandFamilias: string[
         </button>
       </div>
 
-      <div className="flex items-center gap-2 rounded-2xl border border-zinc-200 bg-amber-50/40 p-3 text-sm">
-        <span className="text-zinc-500">Ação em massa:</span>
-        <span className="text-zinc-400">definir R$</span>
-        <input value={bulk} onChange={(e) => setBulk(e.target.value)} type="number" placeholder="0,00" className="w-28 rounded-lg border border-zinc-200 px-2 py-1.5 text-right text-sm" />
-        <span className="text-zinc-400">/m² em <b className="text-zinc-700">{filtered.length}</b> produto(s) filtrado(s)</span>
-        <button onClick={applyBulk} disabled={!bulk || !filtered.length} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">Aplicar</button>
+      <div className="space-y-2 rounded-2xl border border-zinc-200 bg-amber-50/40 p-3 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-24 text-zinc-500">Em massa:</span>
+          <span className="text-zinc-400">definir R$</span>
+          <input value={bulk} onChange={(e) => setBulk(e.target.value)} type="number" placeholder="0,00" className="w-28 rounded-lg border border-zinc-200 px-2 py-1.5 text-right text-sm" />
+          <span className="text-zinc-400">/m²</span>
+          <button onClick={applyBulk} disabled={!bulk || !filtered.length} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">Aplicar</button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-24 text-zinc-500">Em massa:</span>
+          <span className="text-zinc-400">Larg. máx</span>
+          <input value={bulkLarg} onChange={(e) => setBulkLarg(e.target.value)} type="number" placeholder="mm" className="w-28 rounded-lg border border-zinc-200 px-2 py-1.5 text-right text-sm" />
+          <span className="text-zinc-400">mm</span>
+          <button onClick={() => applyBulkLarg(false)} disabled={!bulkLarg || !filtered.length} className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">Aplicar</button>
+          <button onClick={() => applyBulkLarg(true)} disabled={!filtered.length} className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 disabled:opacity-40">Voltar ao padrão</button>
+          <span className="text-zinc-400">em <b className="text-zinc-700">{filtered.length}</b> filtrado(s)</span>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
-        <div className="max-h-[60vh] overflow-auto">
+        <div className="max-h-[58vh] overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-zinc-50">
               <tr>
                 <Th>Modelo</Th><Th>Acion.</Th><Th>Tipo</Th><Th>Coleção</Th><Th>Cor tecido</Th><Th>Acab.</Th><Th>Código</Th>
-                <Th className="text-right">Vlr m² (R$)</Th><Th className="text-center">Em linha</Th>
+                <Th className="text-right">Vlr m² (R$)</Th><Th className="text-right">Larg. máx (mm)</Th><Th className="text-center">Em linha</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -394,14 +455,15 @@ function Precos({ brandFamilias, toast }: { marca: Marca; brandFamilias: string[
               {!loading && filtered.length === 0 && <tr><Td className="text-zinc-400">Nenhum produto.</Td></tr>}
               {filtered.map((r) => (
                 <tr key={r.id} className={cn('hover:bg-zinc-50', !r.ativo && 'opacity-50')}>
-                  <Td className="max-w-[220px] truncate text-zinc-700" >{r.modelo}</Td>
+                  <Td className="max-w-[200px] truncate text-zinc-700" >{r.modelo}</Td>
                   <Td className="text-xs text-zinc-500">{r.acionamento}</Td>
                   <Td className="text-xs text-zinc-500">{r.tipo_tecido}</Td>
                   <Td className="text-zinc-600">{r.colecao}</Td>
                   <Td className="text-zinc-600">{r.cor_tecido}</Td>
                   <Td className="text-xs text-zinc-500">{r.cor_acab}</Td>
                   <Td className="font-mono text-[11px] text-zinc-400">{r.codigo}</Td>
-                  <Td className="w-32"><NumCell value={r.vlr_m2} prefix="R$" onCommit={(n) => setPreco(r, n)} /></Td>
+                  <Td className="w-28"><NumCell value={r.vlr_m2} prefix="R$" onCommit={(n) => setPreco(r, n)} /></Td>
+                  <Td className="w-28"><NumCell value={r.larg_max ?? null} placeholder={modelMax(r) ? `padrão ${modelMax(r)}` : 'padrão'} onCommit={(n) => setLargMax(r, n)} /></Td>
                   <Td className="text-center"><div className="flex justify-center"><Toggle on={r.ativo} onChange={(v) => setAtivo(r, v)} /></div></Td>
                 </tr>
               ))}
@@ -409,7 +471,7 @@ function Precos({ brandFamilias, toast }: { marca: Marca; brandFamilias: string[
           </table>
         </div>
       </div>
-      <p className="text-xs text-zinc-400">Mostrando {filtered.length} de {rows.length} carregados. Use os filtros para refinar.</p>
+      <p className="text-xs text-zinc-400">Mostrando {filtered.length} de {rows.length} carregados. <b>Larg. máx</b> vazia = usa o padrão do modelo; preencha só quando o tecido for mais estreito.</p>
     </div>
   );
 }
@@ -623,80 +685,350 @@ function Trilhos({ toast }: { toast: (m: string) => void }) {
 }
 
 // ============================ Motores ============================
-function Motores({ toast }: { toast: (m: string) => void }) {
+function Motores({ marca, brandFamilias, toast }: { marca: Marca; brandFamilias: string[]; toast: (m: string) => void }) {
   const [rows, setRows] = useState<any[]>([]);
-  useEffect(() => { fetchAll('motores', { order: { col: 'ordem' } }).then(setRows).catch(() => {}); }, []);
+  const [links, setLinks] = useState<Record<number, Set<string>>>({}); // motor_id -> set(modelo)
+  const [modelosByFam, setModelosByFam] = useState<{ familia: string; modelos: { nome: string; grupo: string }[] }[]>([]);
+  const [grupoDe, setGrupoDe] = useState<Record<string, string>>({}); // modelo -> grupo (código)
+  const [editing, setEditing] = useState<any | null>(null);
+
+  const load = async () => {
+    const ms = await fetchAll('motores', { order: { col: 'ordem' } });
+    setRows(ms);
+    const { data: lk } = await supabase.from('motor_modelos').select('motor_id, modelo');
+    const map: Record<number, Set<string>> = {};
+    for (const r of lk ?? []) (map[(r as any).motor_id] ??= new Set()).add((r as any).modelo);
+    setLinks(map);
+    const { data: mg } = await supabase.rpc('modelo_grupos');
+    const fams = new Set(brandFamilias);
+    const byFam: Record<string, { nome: string; grupo: string }[]> = {};
+    const gd: Record<string, string> = {};
+    for (const r of (mg ?? []) as any[]) {
+      if (!r.motorizado || !fams.has(r.familia)) continue;
+      (byFam[r.familia] ??= []).push({ nome: r.modelo, grupo: r.grupo });
+      gd[r.modelo] = r.grupo;
+    }
+    for (const f of Object.keys(byFam)) byFam[f].sort((a, b) => a.grupo.localeCompare(b.grupo));
+    setModelosByFam(brandFamilias.filter((f) => byFam[f]).map((f) => ({ familia: f, modelos: byFam[f] })));
+    setGrupoDe(gd);
+  };
+  useEffect(() => { load(); }, [brandFamilias.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const patch = async (row: any, values: any) => {
     await updateRow('motores', row.id, values);
     setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, ...values } : r)));
     toast('Motor atualizado');
   };
+  const toggleModelo = async (motorId: number, modelo: string, on: boolean) => {
+    if (on) await supabase.from('motor_modelos').insert({ motor_id: motorId, modelo });
+    else await supabase.from('motor_modelos').delete().eq('motor_id', motorId).eq('modelo', modelo);
+    setLinks((l) => { const s = new Set(l[motorId] ?? []); if (on) s.add(modelo); else s.delete(modelo); return { ...l, [motorId]: s }; });
+    toast('Grupos atualizados');
+  };
+  const toggleFamiliaAll = async (motorId: number, modelos: string[], on: boolean) => {
+    if (on) {
+      const cur = links[motorId] ?? new Set<string>();
+      const toAdd = modelos.filter((m) => !cur.has(m));
+      if (toAdd.length) await supabase.from('motor_modelos').insert(toAdd.map((m) => ({ motor_id: motorId, modelo: m })));
+    } else {
+      await supabase.from('motor_modelos').delete().eq('motor_id', motorId).in('modelo', modelos);
+    }
+    setLinks((l) => { const s = new Set(l[motorId] ?? []); modelos.forEach((m) => (on ? s.add(m) : s.delete(m))); return { ...l, [motorId]: s }; });
+    toast('Grupos atualizados');
+  };
+
+  const allBrandModels = modelosByFam.flatMap((g) => g.modelos.map((m) => m.nome));
+  const gruposLabel = (motorId: number) => {
+    const sel = links[motorId] ?? new Set<string>();
+    const inBrand = allBrandModels.filter((m) => sel.has(m));
+    if (inBrand.length === 0) return 'Nenhum grupo';
+    if (inBrand.length === allBrandModels.length) return 'Todos os grupos';
+    const gs = [...new Set(inBrand.map((m) => grupoDe[m]).filter(Boolean))].sort();
+    return gs.join(', ');
+  };
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
-      <table className="w-full text-sm">
-        <thead className="bg-zinc-50"><tr>
-          <Th>Motor</Th><Th className="text-right">Preço Branco</Th><Th className="text-right">Preço Preto</Th>
-          <Th className="text-center">Trilho</Th><Th className="text-center">Cortina</Th><Th className="text-center">Ativo</Th>
-        </tr></thead>
-        <tbody className="divide-y divide-zinc-100">
-          {rows.map((r) => (
-            <tr key={r.id} className={cn('hover:bg-zinc-50', !r.ativo && 'opacity-50')}>
-              <Td className="text-zinc-700">{r.nome}</Td>
-              <Td className="w-32"><NumCell value={r.preco_branco} prefix="R$" onCommit={(n) => patch(r, { preco_branco: n })} /></Td>
-              <Td className="w-32"><NumCell value={r.preco_preto} prefix="R$" onCommit={(n) => patch(r, { preco_preto: n })} /></Td>
-              <Td className="text-center"><div className="flex justify-center"><Toggle on={r.uso_trilho} onChange={(v) => patch(r, { uso_trilho: v })} /></div></Td>
-              <Td className="text-center"><div className="flex justify-center"><Toggle on={r.uso_shade} onChange={(v) => patch(r, { uso_shade: v })} /></div></Td>
-              <Td className="text-center"><div className="flex justify-center"><Toggle on={r.ativo} onChange={(v) => patch(r, { ativo: v })} /></div></Td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-3">
+      <p className="rounded-xl bg-zinc-50 px-4 py-2 text-xs text-zinc-500">
+        Em <b>SHADES</b>, defina em quais <b>grupos de produto</b> (modelos da aba {marca === 'shadexp' ? 'ShadeXP' : 'Luxashade'}, ex.: 400, 402…) cada motor pode ser usado. O app mostra, para cada grupo, só os motores liberados.
+      </p>
+      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-50"><tr>
+            <Th>Motor</Th><Th className="text-right">Preço Branco</Th><Th className="text-right">Preço Preto</Th>
+            <Th className="text-center">Trilho</Th><Th>SHADES (grupos)</Th><Th className="text-center">Ativo</Th>
+          </tr></thead>
+          <tbody className="divide-y divide-zinc-100">
+            {rows.map((r) => (
+              <tr key={r.id} className={cn('hover:bg-zinc-50', !r.ativo && 'opacity-50')}>
+                <Td className="text-zinc-700">{r.nome}</Td>
+                <Td className="w-32"><NumCell value={r.preco_branco} prefix="R$" onCommit={(n) => patch(r, { preco_branco: n })} /></Td>
+                <Td className="w-32"><NumCell value={r.preco_preto} prefix="R$" onCommit={(n) => patch(r, { preco_preto: n })} /></Td>
+                <Td className="text-center"><div className="flex justify-center"><Toggle on={r.uso_trilho} onChange={(v) => patch(r, { uso_trilho: v })} /></div></Td>
+                <Td className="min-w-[200px] max-w-[280px]">
+                  <button onClick={() => setEditing(r)}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 px-3 py-1.5 text-left text-xs text-zinc-600 hover:border-zinc-300">
+                    <span className="truncate">{gruposLabel(r.id)}</span>
+                    <span className="shrink-0 text-zinc-400">editar</span>
+                  </button>
+                </Td>
+                <Td className="text-center"><div className="flex justify-center"><Toggle on={r.ativo} onChange={(v) => patch(r, { ativo: v })} /></div></Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {editing && (
+        <Modal title={`Grupos · ${editing.nome}`} onClose={() => setEditing(null)}>
+          <p className="mb-3 text-xs text-zinc-500">Marque os <b>grupos de produto</b> (aba {marca === 'shadexp' ? 'ShadeXP' : 'Luxashade'}) em que este motor pode ser usado. O código (ex.: 400) é o grupo.</p>
+          <div className="max-h-[60vh] space-y-3 overflow-auto">
+            {modelosByFam.map((g) => {
+              const sel = links[editing.id] ?? new Set<string>();
+              const allOn = g.modelos.length > 0 && g.modelos.every((m) => sel.has(m.nome));
+              return (
+                <div key={g.familia} className="rounded-xl border border-zinc-200">
+                  <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50 px-3 py-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-600">{familyDisplay(g.familia)}</span>
+                    <button onClick={() => toggleFamiliaAll(editing.id, g.modelos.map((m) => m.nome), !allOn)} className="text-[11px] text-zinc-500 underline">
+                      {allOn ? 'desmarcar todos' : 'marcar todos'}
+                    </button>
+                  </div>
+                  <div className="space-y-1 p-2">
+                    {g.modelos.map((m) => (
+                      <label key={m.nome} className="flex items-center justify-between rounded-lg px-2 py-1.5 hover:bg-zinc-50">
+                        <span className="flex items-center gap-2 pr-2 text-xs text-zinc-700">
+                          <span className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-white">{m.grupo}</span>
+                          {m.nome}
+                        </span>
+                        <Toggle on={sel.has(m.nome)} onChange={(v) => toggleModelo(editing.id, m.nome, v)} />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            {modelosByFam.length === 0 && <p className="text-xs text-zinc-400">Nenhum grupo motorizado nesta marca.</p>}
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ============================ Emissores ============================
+function Emissores({ toast }: { toast: (m: string) => void }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const reload = () => fetchAll('emissores', { order: { col: 'ordem' } }).then(setRows).catch(() => {});
+  useEffect(() => { reload(); }, []);
+
+  const patch = async (row: any, values: any, msg = 'Emissor atualizado') => {
+    await updateRow('emissores', row.id, values);
+    setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, ...values } : r)));
+    toast(msg);
+  };
+  const add = async () => {
+    const novo = await insertRow('emissores', {
+      codigo: 'NOVO', descricao: 'Novo emissor', valor: 0, canais: 1,
+      motor_brand: 'SOMFY', brand_luxashade: true, brand_shadexp: true, ativo: true, ordem: rows.length,
+    });
+    setRows((rs) => [...rs, novo]);
+    toast('Emissor adicionado');
+  };
+  const del = async (row: any) => {
+    if (!confirm(`Remover o emissor "${row.descricao}"?`)) return;
+    await deleteRow('emissores', row.id);
+    setRows((rs) => rs.filter((r) => r.id !== row.id));
+    toast('Emissor removido');
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="rounded-xl bg-zinc-50 px-4 py-2 text-xs text-zinc-500">
+          Aparecem no app na categoria <b>EMISSORES</b> (em ambas as marcas). O app agrupa por
+          <b> marca do motor</b> e mostra apenas os marcados para cada marca de cortina.
+        </p>
+        <button onClick={add} className="flex items-center gap-1 whitespace-nowrap rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white">
+          <Plus size={14} /> Emissor
+        </button>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+        <div className="max-h-[64vh] overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-zinc-50"><tr>
+              <Th>Código</Th><Th>Descrição</Th><Th className="text-right">Valor (R$)</Th>
+              <Th className="text-right">Canais</Th><Th>Marca do motor</Th>
+              <Th className="text-center">Luxashade</Th><Th className="text-center">ShadeXP</Th>
+              <Th className="text-center">Ativo</Th><Th />
+            </tr></thead>
+            <tbody className="divide-y divide-zinc-100">
+              {rows.map((r) => (
+                <tr key={r.id} className={cn('hover:bg-zinc-50', !r.ativo && 'opacity-50')}>
+                  <Td className="w-28"><TxtCell value={r.codigo} onCommit={(s) => patch(r, { codigo: s })} /></Td>
+                  <Td><TxtCell value={r.descricao} onCommit={(s) => patch(r, { descricao: s })} /></Td>
+                  <Td className="w-28"><NumCell value={r.valor} prefix="R$" onCommit={(n) => patch(r, { valor: n })} /></Td>
+                  <Td className="w-20"><NumCell value={r.canais} onCommit={(n) => patch(r, { canais: n })} /></Td>
+                  <Td className="w-36"><TxtCell value={r.motor_brand} list="motorbrands" onCommit={(s) => patch(r, { motor_brand: s })} /></Td>
+                  <Td className="text-center"><div className="flex justify-center"><Toggle on={r.brand_luxashade} onChange={(v) => patch(r, { brand_luxashade: v })} /></div></Td>
+                  <Td className="text-center"><div className="flex justify-center"><Toggle on={r.brand_shadexp} onChange={(v) => patch(r, { brand_shadexp: v })} /></div></Td>
+                  <Td className="text-center"><div className="flex justify-center"><Toggle on={r.ativo} onChange={(v) => patch(r, { ativo: v })} /></div></Td>
+                  <Td><button onClick={() => del(r)} className="text-zinc-300 hover:text-red-500"><Trash2 size={15} /></button></Td>
+                </tr>
+              ))}
+              {rows.length === 0 && <tr><Td className="text-zinc-400">Nenhum emissor. Clique em “Emissor” para adicionar.</Td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <datalist id="motorbrands"><option value="SOMFY" /><option value="IVOLVE" /></datalist>
     </div>
   );
 }
 
 // ============================ Opcionais (ShadeXP) ============================
+const FORMULAS_OPC = ['fixo', 'porLargura', 'porAltura', 'porAltComando'];
+
 function Opcionais({ marca, toast }: { marca: Marca; toast: (m: string) => void }) {
   const [rows, setRows] = useState<any[]>([]);
-  useEffect(() => { fetchAll('opcionais', { order: { col: 'ordem' } }).then(setRows).catch(() => {}); }, []);
+  const [links, setLinks] = useState<Record<number, Set<string>>>({});
+  const [modelosByFam, setModelosByFam] = useState<{ familia: string; modelos: string[] }[]>([]);
+  const [editing, setEditing] = useState<any | null>(null);
+
+  const load = async () => {
+    const ops = await fetchAll('opcionais', { order: { col: 'ordem' } });
+    setRows(ops.filter((o: any) => o.tipo === 'modelo'));
+    const { data: lk } = await supabase.from('opcional_modelos').select('opcional_id, modelo');
+    const map: Record<number, Set<string>> = {};
+    for (const r of lk ?? []) (map[(r as any).opcional_id] ??= new Set()).add((r as any).modelo);
+    setLinks(map);
+    const { data: md } = await supabase.from('modelos').select('nome, ordem, familia:familias(nome, marca)').order('ordem');
+    const byFam: Record<string, string[]> = {};
+    for (const m of md ?? []) {
+      const famRaw = (m as any).familia;
+      const fam = Array.isArray(famRaw) ? famRaw[0] : famRaw;
+      if (!fam || fam.marca !== 'shadexp') continue;
+      (byFam[fam.nome] ??= []).push((m as any).nome);
+    }
+    setModelosByFam(Object.entries(byFam).map(([familia, modelos]) => ({ familia, modelos })));
+  };
+  useEffect(() => { if (marca === 'shadexp') load(); }, [marca]);
+
   if (marca === 'luxashade') {
     return <p className="rounded-2xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-400">Os opcionais/acessórios são específicos da <b>ShadeXP</b>. Selecione a aba ShadeXP para editá-los.</p>;
   }
+
   const patch = async (row: any, values: any) => {
     await updateRow('opcionais', row.id, values);
     setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, ...values } : r)));
-    toast('Opcional atualizado');
+    toast('Acessório atualizado');
   };
-  const FORMULAS = ['fixo', 'porLargura', 'porAltura', 'porAltComando'];
-  const grupos = [
-    { tipo: 'modelo', titulo: 'Acessórios por modelo' },
-    { tipo: 'controle_motorizada', titulo: 'Controles / Emissores (motorizadas)' },
-  ];
+  const add = async () => {
+    const novo = await insertRow('opcionais', { codigo: 'NOVO', descricao: 'Novo acessório', valor: 0, formula: 'fixo', tipo: 'modelo', ativo: true, ordem: rows.length });
+    setRows((rs) => [...rs, novo]);
+    toast('Acessório adicionado');
+  };
+  const del = async (row: any) => {
+    if (!confirm(`Remover o acessório "${row.descricao}"?`)) return;
+    await deleteRow('opcionais', row.id);
+    setRows((rs) => rs.filter((r) => r.id !== row.id));
+    toast('Acessório removido');
+  };
+  const toggleModelo = async (opId: number, modelo: string, on: boolean) => {
+    if (on) await supabase.from('opcional_modelos').insert({ opcional_id: opId, modelo });
+    else await supabase.from('opcional_modelos').delete().eq('opcional_id', opId).eq('modelo', modelo);
+    setLinks((l) => { const s = new Set(l[opId] ?? []); if (on) s.add(modelo); else s.delete(modelo); return { ...l, [opId]: s }; });
+    toast('Grupos atualizados');
+  };
+  const toggleFamiliaAll = async (opId: number, modelos: string[], on: boolean) => {
+    if (on) {
+      const cur = links[opId] ?? new Set<string>();
+      const toAdd = modelos.filter((m) => !cur.has(m));
+      if (toAdd.length) await supabase.from('opcional_modelos').insert(toAdd.map((m) => ({ opcional_id: opId, modelo: m })));
+    } else {
+      await supabase.from('opcional_modelos').delete().eq('opcional_id', opId).in('modelo', modelos);
+    }
+    setLinks((l) => { const s = new Set(l[opId] ?? []); modelos.forEach((m) => (on ? s.add(m) : s.delete(m))); return { ...l, [opId]: s }; });
+    toast('Grupos atualizados');
+  };
+  const gruposLabel = (opId: number) => {
+    const sel = links[opId] ?? new Set<string>();
+    const fams = modelosByFam.filter((g) => g.modelos.some((m) => sel.has(m))).map((g) => familyDisplay(g.familia));
+    return fams.length ? fams.join(', ') : 'Nenhum grupo';
+  };
+
   return (
-    <div className="space-y-5">
-      {grupos.map((g) => (
-        <div key={g.tipo} className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
-          <p className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">{g.titulo}</p>
-          <table className="w-full text-sm">
-            <thead><tr><Th>Código</Th><Th>Descrição</Th><Th className="text-right">Valor</Th><Th>Fórmula</Th><Th className="text-center">Ativo</Th></tr></thead>
-            <tbody className="divide-y divide-zinc-100">
-              {rows.filter((r) => r.tipo === g.tipo).map((r) => (
-                <tr key={r.id} className={cn('hover:bg-zinc-50', !r.ativo && 'opacity-50')}>
-                  <Td className="font-mono text-[11px] text-zinc-400">{r.codigo}</Td>
-                  <Td className="text-zinc-700">{r.descricao}</Td>
-                  <Td className="w-28"><NumCell value={r.valor} prefix="R$" onCommit={(n) => patch(r, { valor: n })} /></Td>
-                  <Td className="w-40">
-                    <select value={r.formula} onChange={(e) => patch(r, { formula: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-xs">
-                      {FORMULAS.map((f) => <option key={f} value={f}>{f}</option>)}
-                    </select>
-                  </Td>
-                  <Td className="text-center"><div className="flex justify-center"><Toggle on={r.ativo} onChange={(v) => patch(r, { ativo: v })} /></div></Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="rounded-xl bg-zinc-50 px-4 py-2 text-xs text-zinc-500">
+          Cada acessório vale para os <b>grupos/modelos</b> marcados. Controles/emissores ficam no módulo <b>Emissores</b>.
+        </p>
+        <button onClick={add} className="flex items-center gap-1 whitespace-nowrap rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white">
+          <Plus size={14} /> Acessório
+        </button>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+        <table className="w-full text-sm">
+          <thead className="bg-zinc-50"><tr>
+            <Th>Código</Th><Th>Descrição</Th><Th className="text-right">Valor</Th><Th>Fórmula</Th><Th>Grupos / modelos</Th><Th className="text-center">Ativo</Th><Th />
+          </tr></thead>
+          <tbody className="divide-y divide-zinc-100">
+            {rows.map((r) => (
+              <tr key={r.id} className={cn('hover:bg-zinc-50', !r.ativo && 'opacity-50')}>
+                <Td className="w-28"><TxtCell value={r.codigo} onCommit={(s) => patch(r, { codigo: s })} /></Td>
+                <Td><TxtCell value={r.descricao} onCommit={(s) => patch(r, { descricao: s })} /></Td>
+                <Td className="w-28"><NumCell value={r.valor} prefix="R$" onCommit={(n) => patch(r, { valor: n })} /></Td>
+                <Td className="w-36">
+                  <select value={r.formula} onChange={(e) => patch(r, { formula: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-xs">
+                    {FORMULAS_OPC.map((f) => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </Td>
+                <Td className="min-w-[180px]">
+                  <button onClick={() => setEditing(r)} className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-200 px-3 py-1.5 text-left text-xs text-zinc-600 hover:border-zinc-300">
+                    <span className="truncate">{gruposLabel(r.id)}</span>
+                    <span className="shrink-0 text-zinc-400">editar</span>
+                  </button>
+                </Td>
+                <Td className="text-center"><div className="flex justify-center"><Toggle on={r.ativo} onChange={(v) => patch(r, { ativo: v })} /></div></Td>
+                <Td><button onClick={() => del(r)} className="text-zinc-300 hover:text-red-500"><Trash2 size={15} /></button></Td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><Td className="text-zinc-400">Nenhum acessório. Clique em “Acessório” para adicionar.</Td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {editing && (
+        <Modal title={`Grupos · ${editing.descricao}`} onClose={() => setEditing(null)}>
+          <p className="mb-3 text-xs text-zinc-500">Marque os <b>modelos</b> (organizados por grupo) que oferecem este acessório.</p>
+          <div className="max-h-[60vh] space-y-3 overflow-auto">
+            {modelosByFam.map((g) => {
+              const sel = links[editing.id] ?? new Set<string>();
+              const allOn = g.modelos.length > 0 && g.modelos.every((m) => sel.has(m));
+              return (
+                <div key={g.familia} className="rounded-xl border border-zinc-200">
+                  <div className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50 px-3 py-2">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-600">{familyDisplay(g.familia)}</span>
+                    <button onClick={() => toggleFamiliaAll(editing.id, g.modelos, !allOn)} className="text-[11px] text-zinc-500 underline">
+                      {allOn ? 'desmarcar todos' : 'marcar todos'}
+                    </button>
+                  </div>
+                  <div className="space-y-1 p-2">
+                    {g.modelos.map((m) => (
+                      <label key={m} className="flex items-center justify-between rounded-lg px-2 py-1.5 hover:bg-zinc-50">
+                        <span className="pr-2 text-xs text-zinc-700">{m.replace(/^CORTINA /, '')}</span>
+                        <Toggle on={sel.has(m)} onChange={(v) => toggleModelo(editing.id, m, v)} />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

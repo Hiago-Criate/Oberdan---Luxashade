@@ -81,7 +81,7 @@ export interface EmissorItem {
   brand: Brand;
   productCategory: 'Emissor';
   ambiente: string;
-  motorBrand: 'SOMFY' | 'IVOLVE';
+  motorBrand: string; // marca do motor (SOMFY, IVOLVE, … — extensível)
   codigo: string;
   descricao: string;
   canais: number;

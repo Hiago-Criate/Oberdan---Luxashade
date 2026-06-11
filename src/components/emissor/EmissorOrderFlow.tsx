@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { ChipsField } from '../shade/steps/ChipsField';
 import { SelectField } from '../shade/steps/SelectField';
 import { StepShell } from '../shade/steps/StepShell';
 import { cn } from '../../utils/cn';
 import { BRAND_LABEL, type Brand } from '../../data/brands';
-import { MOTOR_BRANDS, emissoresFor, type MotorBrand } from '../../data/emissores';
+import { motorBrandsFor, emissoresFor, type MotorBrand } from '../../data/emissores';
 import type { EmissorItem } from '../../types/order';
 
 interface Props {
@@ -24,6 +24,12 @@ export function EmissorOrderFlow({ brand, initialItem, onSave }: Props) {
   const [codigo, setCodigo] = useState(initialItem?.codigo ?? '');
   const [quantity, setQuantity] = useState(initialItem?.quantity ?? 1);
   const [observacao, setObservacao] = useState(initialItem?.observacao ?? '');
+
+  // Marcas de motor disponíveis (dinâmicas, vindas do catálogo/Supabase).
+  const motorBrands = motorBrandsFor(brand);
+  useEffect(() => {
+    if (motorBrands.length === 1 && !motorBrand) setMotorBrand(motorBrands[0]);
+  }, [motorBrands.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const emissores = motorBrand ? emissoresFor(brand, motorBrand) : [];
   const selected = emissores.find((e) => e.codigo === codigo) ?? null;
@@ -73,15 +79,21 @@ export function EmissorOrderFlow({ brand, initialItem, onSave }: Props) {
       </StepShell>
 
       <StepShell label="Marca do Motor">
-        <ChipsField
-          value={motorBrand}
-          options={MOTOR_BRANDS}
-          cols={2}
-          onChange={(v) => {
-            setMotorBrand(v as MotorBrand);
-            setCodigo('');
-          }}
-        />
+        {motorBrands.length === 0 ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-700 leading-relaxed">
+            Nenhum emissor cadastrado para {BRAND_LABEL[brand]} ainda. Fale com o vendedor.
+          </div>
+        ) : (
+          <ChipsField
+            value={motorBrand}
+            options={motorBrands}
+            cols={2}
+            onChange={(v) => {
+              setMotorBrand(v as MotorBrand);
+              setCodigo('');
+            }}
+          />
+        )}
       </StepShell>
 
       {motorBrand &&

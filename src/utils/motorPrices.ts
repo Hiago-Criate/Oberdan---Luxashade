@@ -2,6 +2,7 @@
 // catálogo ativo (Supabase) via catalogStore.
 
 import { getRemote } from '../data/catalogStore';
+import { brandFromFamilia } from '../data/brands';
 
 export type MotorPriceTable = Record<string, { Branco: number; Preto: number }>;
 
@@ -57,4 +58,20 @@ export function getSxpShadeMotors(): readonly string[] {
   const r = getRemote();
   if (r) return r.motores.filter((m) => m.uso_shade).map((m) => m.nome);
   return SXP_SHADE_MOTORS;
+}
+
+// Motores liberados para uma família/grupo de shade específica.
+export function motorsForFamilia(familia: string): readonly string[] {
+  const r = getRemote();
+  if (r) return r.motores.filter((m) => (m.familias ?? []).includes(familia)).map((m) => m.nome);
+  // Fallback offline: ShadeXP usa a lista SXP; demais usam a lista de trilho.
+  return brandFromFamilia(familia) === 'shadexp' ? SXP_SHADE_MOTORS : MOTORS;
+}
+
+// Motores liberados para um GRUPO DE PRODUTOS (modelo) específico.
+export function motorsForModelo(modelo: string, familia?: string): readonly string[] {
+  const r = getRemote();
+  if (r) return r.motores.filter((m) => (m.modelos ?? []).includes(modelo)).map((m) => m.nome);
+  // Fallback offline: pela marca (ShadeXP usa lista SXP; demais a de trilho).
+  return familia && brandFromFamilia(familia) === 'shadexp' ? SXP_SHADE_MOTORS : MOTORS;
 }

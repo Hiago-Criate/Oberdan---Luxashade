@@ -41,6 +41,7 @@ export type ShadeQuote =
         | 'LARGURA_INVALIDA'
         | 'ALTURA_INVALIDA'
         | 'AREA_EXCEDIDA'
+        | 'LARGURA_TECIDO'
         | 'SEM_PRODUTO';
       limits?: ModelLimits;
       m2?: number;
@@ -100,6 +101,11 @@ export function calculateShadePrice(draft: ShadeDraft): ShadeQuote {
 
   const prod = findProduct({ familia, acionamento, modelo, tipoTecido, colecao, corTecido, corAcabamento });
   if (!prod) return { ok: false, reason: 'SEM_PRODUTO', limits, m2 };
+
+  // Largura máxima específica do tecido (override) — não fabricável acima disso.
+  if (prod.largMaxOverride != null && widthMm > prod.largMaxOverride) {
+    return { ok: false, reason: 'LARGURA_TECIDO', limits, m2 };
+  }
 
   const vlrM2 = prod.vlrM2;
   const codigo = prod.codigo;

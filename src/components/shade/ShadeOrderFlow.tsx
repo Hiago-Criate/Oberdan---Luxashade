@@ -9,11 +9,11 @@ import {
   coresAcabamentoFor,
 } from '../../data/shadeQueries';
 import { calculateShadePrice, getLimits, type ShadeDraft, type ShadeQuote } from '../../utils/calculatorShade';
-import { getMotors, getSxpShadeMotors } from '../../utils/motorPrices';
+import { motorsForModelo } from '../../utils/motorPrices';
 import { cn } from '../../utils/cn';
 import { COR_ACAB_NOMES, type OpcionalEscolhido, type ShadeItem } from '../../types/order';
 import type { Brand } from '../../data/brands';
-import { estoqueColecaoMap, estoqueCorMap } from '../../data/catalogStore';
+import { estoqueColecaoMap, estoqueCorMap, fabricMaxWidth } from '../../data/catalogStore';
 import {
   calcOpcionalPrice,
   opcionaisFor,
@@ -218,6 +218,13 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
   const estCor = useMemo(() => estoqueCorMap(), []);
   const colecaoSobConsulta = !!draft.colecao && estCol[draft.colecao] === 'sob_consulta';
   const corSobConsulta = !!draft.corTecido && estCor[draft.corTecido] === 'sob_consulta';
+
+  // Largura máxima específica do tecido selecionado (pode ser menor que a do modelo).
+  const tecidoLargMax = useMemo(
+    () => (draft.corTecido ? fabricMaxWidth(draft.modelo, draft.colecao, draft.corTecido) : null),
+    [draft.modelo, draft.colecao, draft.corTecido],
+  );
+  const larguraExcedeTecido = !!(tecidoLargMax && widthMm > tecidoLargMax);
 
   // Validações de dimensão (independentes do quote completo).
   const widthInvalid =
@@ -752,6 +759,15 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
               </p>
             </div>
           )}
+          {larguraExcedeTecido && (
+            <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+              <p className="text-[11px] leading-snug text-red-600">
+                A largura de <span className="font-semibold">{fmtNum(widthMm, 0)} mm</span> excede o
+                máximo deste tecido (<span className="font-semibold">{fmtNum(tecidoLargMax!, 0)} mm</span>).
+                Reduza a largura ou escolha outro tecido.
+              </p>
+            </div>
+          )}
         </StepShell>
       )}
 
@@ -773,7 +789,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
         <StepShell label="Motor">
           <SelectField
             value={draft.motor}
-            options={isSxp ? getSxpShadeMotors() : getMotors()}
+            options={motorsForModelo(draft.modelo, familia)}
             placeholder="Escolha o motor"
             onChange={(v) => setDraft((d) => ({ ...d, motor: v }))}
           />
