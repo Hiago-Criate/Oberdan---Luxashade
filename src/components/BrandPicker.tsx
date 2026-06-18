@@ -67,7 +67,7 @@ export function BrandPicker({ onSelect, onBack }: Props) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      className="min-h-screen flex flex-col pt-16 pb-12 space-y-10"
+      className="min-h-svh flex flex-col pt-16 pb-12 space-y-10"
     >
       <div className="text-center space-y-3">
         <h1 className="text-3xl font-light tracking-tight">Selecione a marca</h1>

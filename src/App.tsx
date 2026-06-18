@@ -124,7 +124,7 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-zinc-50 font-sans text-zinc-900 selection:bg-zinc-200">
+    <div className="min-h-svh bg-zinc-50 font-sans text-zinc-900 selection:bg-zinc-200">
       <div className="max-w-md mx-auto px-6 pb-12">
         <AnimatePresence mode="wait">
           {step === 'landing' && (
@@ -133,7 +133,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="h-screen flex flex-col justify-between py-12"
+              className="min-h-svh flex flex-col justify-between py-12"
             >
               <Header />
               <div className="flex-1 flex items-center justify-center">
@@ -167,7 +167,7 @@ export default function App() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="h-screen flex flex-col justify-center gap-8"
+              className="min-h-svh flex flex-col justify-center gap-8"
             >
               <div className="space-y-3">
                 <img
@@ -292,7 +292,7 @@ export default function App() {
               key="final"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
-              className="h-screen flex flex-col justify-center gap-8"
+              className="min-h-svh flex flex-col justify-center gap-8"
             >
               <div className="space-y-2">
                 <h2 className="text-2xl font-light text-zinc-800">Quase lá...</h2>
@@ -350,7 +350,7 @@ export default function App() {
               key="success"
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="h-screen flex flex-col items-center justify-center text-center gap-6"
+              className="min-h-svh flex flex-col items-center justify-center text-center gap-6"
             >
               <div className="w-24 h-24 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-4">
                 <CheckCircle2 size={48} />

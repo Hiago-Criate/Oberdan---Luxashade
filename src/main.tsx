@@ -18,7 +18,7 @@ let hydrated = false;
 
 function BootLoading() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-5 bg-zinc-50">
+    <div className="min-h-svh flex flex-col items-center justify-center gap-5 bg-zinc-50">
       <img src="/logo-luxashade.png" alt="Luxashade" className="h-24 object-contain animate-pulse" />
       <div className="h-1 w-32 overflow-hidden rounded-full bg-zinc-200">
         <div className="h-full w-1/2 animate-[loading_1.1s_ease-in-out_infinite] rounded-full bg-zinc-900" />
