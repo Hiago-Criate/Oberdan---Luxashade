@@ -187,6 +187,13 @@ export async function hydrateCatalog(): Promise<'remote' | 'static'> {
       estoqueCombo: j.estoque_combo ?? [],
       config: j.config ?? {},
     };
+    // Toldos (grupos 360/361/460/461 — família TOLDOS) ficam FORA desta 1ª versão.
+    const TOLDO_GRUPOS = ['360', '361', '460', '461'];
+    const ehToldo = (codigo?: string, familia?: string | null) =>
+      familia === 'TOLDOS' || (!!codigo && TOLDO_GRUPOS.includes(String(codigo).split('.')[0]));
+    remote.familias = remote.familias.filter((f) => f.nome !== 'TOLDOS');
+    remote.modelos = remote.modelos.filter((m) => m.familia !== 'TOLDOS');
+    remote.products = remote.products.filter((p) => !ehToldo(p.codigo, p.familia));
     return 'remote';
   } catch (e) {
     console.warn('[catalog] Supabase indisponível — usando catálogo estático.', e);
