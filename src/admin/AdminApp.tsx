@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard, Tag, Ruler, Layers3, Palette, Cpu, Wrench, Settings2,
   History, LogOut, Save, Plus, Trash2, Search, ExternalLink, RefreshCw,
-  AlertTriangle, Check, Lock, RadioTower, X,
+  AlertTriangle, Check, Lock, RadioTower, X, Upload, FileSpreadsheet, Loader2, CheckCircle2,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { cn } from '../utils/cn';
@@ -11,6 +11,10 @@ import {
   type Marca, type EstoqueStatus, ESTOQUE_LABEL, money,
   login, logout, fetchAll, updateRow, insertRow, deleteRow, fetchProdutos, distinctFrom,
 } from './lib';
+import {
+  parseWorkbook, diffAgainstDb, applyImport,
+  type ParsedCatalog, type CatalogDiff, type ApplyResult,
+} from './catalogImport';
 
 // ============================ Primitivos de UI ============================
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -156,10 +160,11 @@ function Login({ onOk }: { onOk: () => void }) {
 }
 
 // ============================ Shell ============================
-type ModuleKey = 'overview' | 'precos' | 'dimensoes' | 'colecoes' | 'cores' | 'trilhos' | 'motores' | 'emissores' | 'opcionais' | 'config' | 'historico';
+type ModuleKey = 'overview' | 'importar' | 'precos' | 'dimensoes' | 'colecoes' | 'cores' | 'trilhos' | 'motores' | 'emissores' | 'opcionais' | 'config' | 'historico';
 
 const MODULES: { key: ModuleKey; label: string; icon: any }[] = [
   { key: 'overview', label: 'Visão geral', icon: LayoutDashboard },
+  { key: 'importar', label: 'Importar planilha', icon: Upload },
   { key: 'precos', label: 'Preços (m²)', icon: Tag },
   { key: 'dimensoes', label: 'Dimensões', icon: Ruler },
   { key: 'colecoes', label: 'Coleções', icon: Layers3 },
@@ -254,6 +259,7 @@ export function AdminApp() {
         </div>
 
         {mod === 'overview' && <Overview marca={marca} brandFamilias={brandFamilias} />}
+        {mod === 'importar' && <Importar toast={toast.show} />}
         {mod === 'precos' && <Precos marca={marca} brandFamilias={brandFamilias} toast={toast.show} />}
         {mod === 'dimensoes' && <Dimensoes brandFamilias={brandFamilias} toast={toast.show} />}
         {mod === 'colecoes' && <Colecoes brandFamilias={brandFamilias} toast={toast.show} />}
@@ -1104,6 +1110,163 @@ function Historico() {
           {rows.length === 0 && <tr><Td className="text-zinc-400">Sem alterações registradas ainda.</Td></tr>}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ============================ Importar planilha ============================
+function StatCard({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
+  return (
+    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-4">
+      <div className="text-2xl font-semibold tabular-nums text-zinc-900">{value}</div>
+      <div className="text-sm font-medium text-zinc-700">{label}</div>
+      {hint && <div className="mt-0.5 text-xs text-zinc-400">{hint}</div>}
+    </div>
+  );
+}
+
+function Importar({ toast }: { toast: (m: string) => void }) {
+  const [phase, setPhase] = useState<'idle' | 'parsing' | 'preview' | 'applying' | 'done' | 'error'>('idle');
+  const [fileName, setFileName] = useState('');
+  const [parsed, setParsed] = useState<ParsedCatalog | null>(null);
+  const [diff, setDiff] = useState<CatalogDiff | null>(null);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [result, setResult] = useState<ApplyResult | null>(null);
+  const [errMsg, setErrMsg] = useState('');
+  const [drag, setDrag] = useState(false);
+
+  const handleFile = async (file?: File | null) => {
+    if (!file) return;
+    setFileName(file.name); setPhase('parsing'); setErrMsg('');
+    try {
+      const buf = await file.arrayBuffer();
+      const p = parseWorkbook(buf);
+      if (!p.dims.length && !p.prices.length)
+        throw new Error('Não encontrei as abas de dimensões nem de preços. Confira se é a planilha "Modelo Dados WebApp".');
+      setParsed(p);
+      setDiff(await diffAgainstDb(p));
+      setPhase('preview');
+    } catch (e: any) { setErrMsg(e?.message ?? String(e)); setPhase('error'); }
+  };
+
+  const apply = async () => {
+    if (!parsed || !diff) return;
+    setPhase('applying'); setProgress({ done: 0, total: parsed.dims.length + parsed.prices.length });
+    try {
+      const r = await applyImport(parsed, diff.grupoNome, (done, total) => setProgress({ done, total }));
+      setResult(r); setPhase('done'); toast('Catálogo atualizado no banco!');
+    } catch (e: any) { setErrMsg(e?.message ?? String(e)); setPhase('error'); }
+  };
+
+  const reset = () => { setPhase('idle'); setParsed(null); setDiff(null); setResult(null); setFileName(''); setErrMsg(''); };
+  const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
+  const totalChanges = diff ? diff.prices.combosChanged + diff.dims.changed + diff.largMax.combos : 0;
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-5">
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-zinc-900 p-2 text-white"><FileSpreadsheet size={20} /></div>
+          <div className="text-sm text-zinc-600">
+            <p className="font-medium text-zinc-800">Atualize o catálogo a partir da planilha</p>
+            <p className="mt-1">Suba a planilha <span className="font-medium">Modelo Dados WebApp</span> (.xlsx). O sistema lê as abas de{' '}
+              <span className="font-medium">dimensões</span>, <span className="font-medium">preços m²</span> e{' '}
+              <span className="font-medium">largura máx por tecido</span>, mostra o que vai mudar e só aplica após você confirmar.
+              Reflete no app ao recarregar.</p>
+          </div>
+        </div>
+      </div>
+
+      {phase === 'idle' && (
+        <label
+          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files?.[0]); }}
+          className={cn('flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-12 text-center transition-colors',
+            drag ? 'border-zinc-900 bg-zinc-50' : 'border-zinc-300 hover:border-zinc-400 hover:bg-zinc-50')}>
+          <Upload size={28} className="text-zinc-400" />
+          <div className="text-sm text-zinc-600"><span className="font-semibold text-zinc-900">Clique para escolher</span> ou arraste o arquivo .xlsx aqui</div>
+          <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} />
+        </label>
+      )}
+
+      {phase === 'parsing' && (
+        <div className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-8 text-sm text-zinc-600">
+          <Loader2 className="animate-spin" size={18} /> Lendo <span className="font-medium">{fileName}</span> e comparando com o banco…
+        </div>
+      )}
+
+      {phase === 'preview' && diff && parsed && (
+        <>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-zinc-500"><FileSpreadsheet size={15} /> {fileName}</div>
+            <button onClick={reset} className="text-xs text-zinc-500 hover:text-zinc-800">Trocar arquivo</button>
+          </div>
+          {parsed.warnings.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 space-y-1">
+              {parsed.warnings.map((w, i) => (<div key={i} className="flex items-center gap-1.5"><AlertTriangle size={13} /> {w}</div>))}
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-3">
+            <StatCard label="Preços m² a alterar" value={diff.prices.combosChanged} hint={`${diff.prices.productsChanged} produtos`} />
+            <StatCard label="Dimensões a alterar" value={diff.dims.changed} hint={`de ${diff.dims.total} grupos`} />
+            <StatCard label="Larg. máx por tecido" value={diff.largMax.combos} hint={`${diff.largMax.productsAffected} produtos`} />
+          </div>
+          {diff.prices.unmatched > 0 && (
+            <div className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              <AlertTriangle size={13} /> {diff.prices.unmatched} combinações da planilha não casaram com produtos do banco (serão ignoradas).
+            </div>
+          )}
+          <details className="rounded-xl border border-zinc-200 bg-white p-3 text-xs">
+            <summary className="cursor-pointer font-medium text-zinc-700">Ver exemplos do que vai mudar</summary>
+            <div className="mt-2 space-y-2 text-zinc-500">
+              {diff.prices.samples.length > 0 && <div><div className="font-medium text-zinc-600">Preços</div>{diff.prices.samples.map((x, i) => <div key={i}>{x}</div>)}</div>}
+              {diff.dims.samples.length > 0 && <div><div className="font-medium text-zinc-600">Dimensões</div>{diff.dims.samples.map((x, i) => <div key={i}>{x}</div>)}</div>}
+              {diff.largMax.samples.length > 0 && <div><div className="font-medium text-zinc-600">Largura máx</div>{diff.largMax.samples.map((x, i) => <div key={i}>{x}</div>)}</div>}
+            </div>
+          </details>
+          {totalChanges === 0 ? (
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-500">Nada para alterar — o banco já está igual à planilha.</div>
+          ) : (
+            <button onClick={apply} className="flex items-center gap-2 rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800">
+              <Check size={16} /> Aplicar no banco ({totalChanges} alterações)
+            </button>
+          )}
+        </>
+      )}
+
+      {phase === 'applying' && (
+        <div className="rounded-2xl border border-zinc-200 bg-white p-6">
+          <div className="mb-2 flex items-center gap-2 text-sm text-zinc-700"><Loader2 className="animate-spin" size={16} /> Aplicando… {pct}%</div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+            <div className="h-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="mt-2 text-xs text-zinc-400">{progress.done} de {progress.total} · não feche esta aba</div>
+        </div>
+      )}
+
+      {phase === 'done' && result && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+            <div className="flex items-center gap-2 text-emerald-800"><CheckCircle2 size={20} /> <span className="font-semibold">Catálogo atualizado!</span></div>
+            <div className="mt-3 grid grid-cols-3 gap-3 text-sm text-emerald-900">
+              <div><div className="text-xl font-semibold">{result.combosUpdated}</div>combinações de preço</div>
+              <div><div className="text-xl font-semibold">{result.productsTouched}</div>produtos atualizados</div>
+              <div><div className="text-xl font-semibold">{result.dimsUpdated}</div>dimensões</div>
+            </div>
+            {result.fails > 0 && <div className="mt-2 text-xs text-red-600">{result.fails} falhas: {result.failSamples.join(' · ')}</div>}
+          </div>
+          <div className="text-sm text-zinc-500">As mudanças já estão no banco. O app dos revendedores reflete ao recarregar.</div>
+          <button onClick={reset} className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Importar outra planilha</button>
+        </div>
+      )}
+
+      {phase === 'error' && (
+        <div className="space-y-3">
+          <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"><AlertTriangle size={16} /> <span>{errMsg}</span></div>
+          <button onClick={reset} className="rounded-xl border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50">Tentar de novo</button>
+        </div>
+      )}
     </div>
   );
 }
