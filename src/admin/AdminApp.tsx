@@ -914,16 +914,12 @@ function Opcionais({ marca, toast }: { marca: Marca; toast: (m: string) => void 
     for (const m of md ?? []) {
       const famRaw = (m as any).familia;
       const fam = Array.isArray(famRaw) ? famRaw[0] : famRaw;
-      if (!fam || fam.marca !== 'shadexp') continue;
+      if (!fam || fam.marca !== marca) continue;
       (byFam[fam.nome] ??= []).push((m as any).nome);
     }
     setModelosByFam(Object.entries(byFam).map(([familia, modelos]) => ({ familia, modelos })));
   };
-  useEffect(() => { if (marca === 'shadexp') load(); }, [marca]);
-
-  if (marca === 'luxashade') {
-    return <p className="rounded-2xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-400">Os opcionais/acessórios são específicos da <b>ShadeXP</b>. Selecione a aba ShadeXP para editá-los.</p>;
-  }
+  useEffect(() => { load(); }, [marca]);
 
   const patch = async (row: any, values: any) => {
     await updateRow('opcionais', row.id, values);
@@ -964,6 +960,14 @@ function Opcionais({ marca, toast }: { marca: Marca; toast: (m: string) => void 
     return fams.length ? fams.join(', ') : 'Nenhum grupo';
   };
 
+  // Mostra os acessórios desta marca: os ligados a algum modelo da marca, ou os
+  // ainda sem grupo (recém-criados, para você atribuir).
+  const brandModelos = new Set(modelosByFam.flatMap((g) => g.modelos));
+  const visibleRows = rows.filter((r) => {
+    const sel = links[r.id];
+    return !sel || sel.size === 0 || [...sel].some((m) => brandModelos.has(m));
+  });
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
@@ -981,7 +985,7 @@ function Opcionais({ marca, toast }: { marca: Marca; toast: (m: string) => void 
             <Th>Código</Th><Th>Descrição</Th><Th className="text-right">Valor</Th><Th>Fórmula</Th><Th>Grupos / modelos</Th><Th className="text-center">Ativo</Th><Th />
           </tr></thead>
           <tbody className="divide-y divide-zinc-100">
-            {rows.map((r) => (
+            {visibleRows.map((r) => (
               <tr key={r.id} className={cn('hover:bg-zinc-50', !r.ativo && 'opacity-50')}>
                 <Td className="w-28"><TxtCell value={r.codigo} onCommit={(s) => patch(r, { codigo: s })} /></Td>
                 <Td><TxtCell value={r.descricao} onCommit={(s) => patch(r, { descricao: s })} /></Td>
@@ -1001,7 +1005,7 @@ function Opcionais({ marca, toast }: { marca: Marca; toast: (m: string) => void 
                 <Td><button onClick={() => del(r)} className="text-zinc-300 hover:text-red-500"><Trash2 size={15} /></button></Td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><Td className="text-zinc-400">Nenhum acessório. Clique em “Acessório” para adicionar.</Td></tr>}
+            {visibleRows.length === 0 && <tr><Td className="text-zinc-400">Nenhum acessório nesta marca. Clique em “Acessório” para adicionar.</Td></tr>}
           </tbody>
         </table>
       </div>

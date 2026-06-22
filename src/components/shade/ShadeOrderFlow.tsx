@@ -265,13 +265,15 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
   const lateraisReady = dimsReady && ladoReady && alturaComandoReady && modulosReady;
 
   // Opcionais aplicáveis (ShadeXP). Só calcula depois que modelo está escolhido.
+  // Opcionais valem para qualquer marca — aparecem os que estiverem ligados ao
+  // modelo no catálogo (antes era travado só na ShadeXP).
   const opcionaisAplicaveis = useMemo(
-    () => (isSxp && draft.modelo ? opcionaisFor(draft.modelo) : []),
-    [isSxp, draft.modelo],
+    () => (draft.modelo ? opcionaisFor(draft.modelo) : []),
+    [draft.modelo],
   );
   // Resolve quais foram efetivamente escolhidos com valor calculado.
   const opcionaisEscolhidos: OpcionalEscolhido[] = useMemo(() => {
-    if (!isSxp || !opcionaisAplicaveis.length) return [];
+    if (!opcionaisAplicaveis.length) return [];
     return opcionaisAplicaveis
       .filter((r) => draft.opcionais.has(r.codigo))
       .map((r) => ({
@@ -797,7 +799,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
       )}
 
       {/* 10. Opcionais (ShadeXP) — só aparece depois de Acabamento e do Motor (quando motorizada) */}
-      {isSxp && draft.corAcabamento && (!isMotorized || draft.motor) && opcionaisAplicaveis.length > 0 && (
+      {draft.corAcabamento && (!isMotorized || draft.motor) && opcionaisAplicaveis.length > 0 && (
         <StepShell
           label="Opcionais (acessórios)"
           hint="Marque os acessórios que deseja incluir. Cada opcional é cobrado por peça."
