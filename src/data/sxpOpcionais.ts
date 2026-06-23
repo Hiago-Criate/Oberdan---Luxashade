@@ -81,6 +81,46 @@ export const LUXA_CORRENTE_CONTINUA_FAMILIAS: ReadonlySet<string> = new Set([
   'ROMAN SHADE', 'DUAL SHADE', 'SOFT SHADE', 'CELULAR SHADE',
 ]);
 
+// Formata valor no estilo das descrições existentes: inteiro sem casas, senão 2.
+const fmtValorOpc = (v: number) =>
+  Number.isInteger(v)
+    ? v.toLocaleString('pt-BR')
+    : v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// "Descriçãozinha" embaixo do acessório (a obs). Quando o cadastro não traz uma,
+// derivamos da fórmula + valor — assim acessórios lançados sem obs já mostram a
+// linha "R$ X × medida" igual aos demais. (Lília, 2026-06-23)
+function deriveObs(o: { formula: FormulaOpcional; valor: number }): string | undefined {
+  const v = `R$ ${fmtValorOpc(o.valor)}`;
+  switch (o.formula) {
+    case 'porLargura': return `${v} × Largura (m).`;
+    case 'porAltura': return `${v} × Altura (m).`;
+    case 'porAltComando': return `${v} × Altura do Comando (m).`;
+    default: return undefined; // fixo: sem subtítulo de fórmula (o preço já aparece ao lado)
+  }
+}
+
+// Cobertura superior do roller: Tecido Desce pela Frente, Bandôs e Boxes são
+// acabamentos do TOPO — só pode existir UM por cortina. Tornamos todos
+// mutuamente exclusivos (unindo com o `exclui` que já vier do cadastro). Casado
+// por descrição p/ pegar variações futuras (Square Box LXG, Box ..., Bandô ...).
+// (Lília, 2026-06-23)
+const COBERTURA_SUPERIOR_RX = /desce pela frente|band[oô]|box/i;
+
+function aplicaExclusaoCoberturaSuperior(rules: readonly OpcionalRule[]): OpcionalRule[] {
+  const grupo = rules.filter((r) => COBERTURA_SUPERIOR_RX.test(r.descricao));
+  if (grupo.length < 2) return [...rules];
+  const codigos = grupo.map((r) => r.codigo);
+  return rules.map((r) => {
+    if (!COBERTURA_SUPERIOR_RX.test(r.descricao)) return r;
+    const merged = Array.from(new Set([
+      ...(r.exclusiveWith ?? []),
+      ...codigos.filter((c) => c !== r.codigo),
+    ]));
+    return { ...r, exclusiveWith: merged };
+  });
+}
+
 // ----- Conversão remoto -> OpcionalRule -----
 function fromRemote(o: RemoteOpcional): OpcionalRule {
   return {
@@ -88,7 +128,7 @@ function fromRemote(o: RemoteOpcional): OpcionalRule {
     descricao: o.descricao,
     valor: o.valor,
     formula: o.formula,
-    obs: o.obs ?? undefined,
+    obs: o.obs && o.obs.trim() ? o.obs : deriveObs(o),
     exclusiveWith: o.exclui && o.exclui.length ? o.exclui : undefined,
   };
 }
@@ -129,8 +169,10 @@ export function opcionaisFor(modelo: string): readonly OpcionalRule[] {
   // (categoria "EMISSORES" → ver src/data/emissores.ts). Aqui ficam só os
   // acessórios por modelo (TDF, Bandô, guias, square box, etc.).
   const r = getRemote();
-  if (r) return (r.opcionaisPorModelo[modelo] ?? []).map(fromRemote);
-  return SXP_OPCIONAIS_BY_MODEL[modelo] ?? [];
+  const base: OpcionalRule[] = r
+    ? (r.opcionaisPorModelo[modelo] ?? []).map(fromRemote)
+    : (SXP_OPCIONAIS_BY_MODEL[modelo] ?? []).map((o) => (o.obs ? o : { ...o, obs: deriveObs(o) }));
+  return aplicaExclusaoCoberturaSuperior(base);
 }
 
 export function calcOpcionalPrice(
