@@ -13,8 +13,12 @@ export interface OrcamentoInput {
   marca: Brand;
   cnpj: string;
   customer: { name: string; phone: string };
+  vendedor?: string | null; // vendedor da revenda (quando identificada)
   items: readonly OrderItem[]; // na ordem do carrinho
-  total: number;
+  subtotal: number; // soma dos itens (bruto)
+  descontoPct: number; // % de desconto da revenda
+  descontoValor: number; // valor do desconto em R$
+  total: number; // subtotal − desconto (valor final)
   numero: string; // nº provisório do documento
   now: Date;
 }
@@ -36,6 +40,7 @@ const VALIDADE_DIAS = 5;
 // ---------- formatação ----------
 const fmtBRL = (n: number) =>
   (n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPct = (n: number) => `${(n || 0).toLocaleString('pt-BR')}%`;
 const fmtMm = (n: number) => (n || 0).toLocaleString('pt-BR');
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const fmtDate = (d: Date) => `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
@@ -88,7 +93,7 @@ function linhasDoItem(it: OrderItem): ItemLinhas {
 
 // ---------- documento ----------
 export function buildDocDefinition(input: OrcamentoInput): TDocumentDefinitions {
-  const { tipo, marca, cnpj, customer, items, total, numero, now } = input;
+  const { tipo, marca, cnpj, customer, vendedor, items, subtotal, descontoPct, descontoValor, total, numero, now } = input;
   const titulo = tipo === 'pedido' ? 'PEDIDO DE VENDA' : 'ORÇAMENTO DE VENDA';
 
   // Cabeçalho da tabela de itens.
@@ -168,6 +173,7 @@ export function buildDocDefinition(input: OrcamentoInput): TDocumentDefinitions 
                   labelVal('Nome/Razão Social:', customer.name),
                   labelVal('CNPJ:', cnpj),
                   labelVal('Telefone:', customer.phone),
+                  ...(vendedor ? [labelVal('Vendedor:', vendedor)] : []),
                 ],
                 margin: [6, 5, 6, 5],
               },
@@ -213,8 +219,11 @@ export function buildDocDefinition(input: OrcamentoInput): TDocumentDefinitions 
             table: {
               widths: ['auto', 'auto'],
               body: [
-                [{ text: 'Subtotal:', style: 'totLbl' }, { text: `R$ ${fmtBRL(total)}`, style: 'totVal' }],
-                [{ text: '(-) Desconto:', style: 'totLbl' }, { text: `R$ ${fmtBRL(0)}`, style: 'totVal' }],
+                [{ text: 'Subtotal:', style: 'totLbl' }, { text: `R$ ${fmtBRL(subtotal)}`, style: 'totVal' }],
+                [
+                  { text: descontoPct > 0 ? `(-) Desconto (${fmtPct(descontoPct)}):` : '(-) Desconto:', style: 'totLbl' },
+                  { text: `R$ ${fmtBRL(descontoValor)}`, style: 'totVal' },
+                ],
                 [{ text: '(+) Frete:', style: 'totLbl' }, { text: `R$ ${fmtBRL(0)}`, style: 'totVal' }],
                 [
                   { text: 'Total Geral:', style: 'totLblBold' },

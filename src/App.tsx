@@ -17,7 +17,11 @@ import { BrandPicker } from './components/BrandPicker';
 import { BRAND_LABEL, type Brand } from './data/brands';
 import { cn } from './utils/cn';
 import { generateOrcamentoPdf, type OrcamentoPdf } from './utils/orcamentoPdf';
+import { fetchRevendaByCnpj, type Revenda } from './data/revenda';
 import type { OrderItem } from './types/order';
+
+const fmtBRL = (n: number) => (n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+const fmtPct = (n: number) => `${(n || 0).toLocaleString('pt-BR')}%`;
 
 type Step = 'landing' | 'brand' | 'cnpj' | 'order' | 'cart' | 'final' | 'success';
 type TipoEnvio = 'orcamento' | 'pedido';
@@ -28,13 +32,34 @@ export default function App() {
   const [step, setStep] = useState<Step>('landing');
   const [brand, setBrand] = useState<Brand>('luxashade');
   const [cnpj, setCnpj] = useState('');
+  const [revenda, setRevenda] = useState<Revenda | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
   const [tipoEnvio, setTipoEnvio] = useState<TipoEnvio>('pedido');
   const [userInfo, setUserInfo] = useState({ name: '', phone: '' });
   const [loading, setLoading] = useState(false);
 
-  const total = cart.reduce((acc, it) => acc + it.price, 0);
+  // Desconto da revenda (identificada pelo CNPJ). Sem revenda/sem desconto → 0.
+  const subtotal = cart.reduce((acc, it) => acc + it.price, 0);
+  const descontoPct = revenda?.desconto ?? 0;
+  const descontoValor = subtotal * (descontoPct / 100);
+  const total = subtotal - descontoValor;
+
+  // Busca a revenda pelo CNPJ e segue para o pedido (sem travar se não achar).
+  const identificarECont = async () => {
+    setLookingUp(true);
+    const r = await fetchRevendaByCnpj(cnpj);
+    setRevenda(r);
+    if (r) {
+      setUserInfo((u) => ({
+        name: u.name || r.nome || '',
+        phone: u.phone || r.telefone || '',
+      }));
+    }
+    setLookingUp(false);
+    setStep('order');
+  };
 
   const upsertItem = (item: OrderItem) => {
     setCart((prev) => {
@@ -75,7 +100,11 @@ export default function App() {
           marca: brand,
           cnpj,
           customer: userInfo,
+          vendedor: revenda?.vendedor ?? null,
           items: cart,
+          subtotal,
+          descontoPct,
+          descontoValor,
           total,
           numero,
           now,
@@ -85,16 +114,23 @@ export default function App() {
       }
 
       await axios.post(WEBHOOK_URL, {
-        // v4: + numeroOrcamento e pdf (base64). v3 trouxe item 'emissor' + observacao.
-        schemaVersion: 4,
+        // v5: + desconto por revenda (subtotal/descontoPct/descontoValor) e bloco
+        // `revenda`. v4 trouxe numeroOrcamento e pdf; v3, item 'emissor' + observacao.
+        schemaVersion: 5,
         tipo: tipoEnvio,
         marca: brand,
         cnpj,
         customer: userInfo,
+        // Revenda identificada pelo CNPJ (null se não cadastrada). `total` já é o
+        // valor COM desconto aplicado; subtotal é o bruto.
+        revenda,
         numeroOrcamento: numero,
         // numeroItem = posição (1-based) na ordem do pedido; é a referência usada
         // nas observações ("Item 01 → canal 3", "lado a lado com o Item 02").
         items: cart.map((it, i) => ({ numeroItem: i + 1, ...it })),
+        subtotal,
+        descontoPct,
+        descontoValor,
         total,
         // PDF pronto p/ anexar/encaminhar no n8n (Convert to File a partir do base64).
         pdf,
@@ -189,12 +225,12 @@ export default function App() {
                 />
               </div>
               <button
-                disabled={!cnpj}
-                onClick={() => setStep('order')}
+                disabled={!cnpj || lookingUp}
+                onClick={identificarECont}
                 className="w-full bg-zinc-900 text-white py-5 rounded-2xl font-medium disabled:opacity-50 transition-all flex items-center justify-center gap-2"
               >
-                Continuar
-                <ArrowRight size={20} />
+                {lookingUp ? 'Identificando...' : 'Continuar'}
+                {!lookingUp && <ArrowRight size={20} />}
               </button>
             </motion.div>
           )}
@@ -237,6 +273,17 @@ export default function App() {
                 </span>
               </div>
 
+              {revenda && (
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+                  <p className="text-sm font-medium text-emerald-800">{revenda.nome}</p>
+                  <p className="text-xs text-emerald-600">
+                    {descontoPct > 0
+                      ? `Desconto de ${fmtPct(descontoPct)} aplicado a este orçamento.`
+                      : 'Cliente identificado · sem desconto cadastrado.'}
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-4">
                 {cart.map((item, idx) => (
                   <CartItemCard
@@ -260,10 +307,22 @@ export default function App() {
               </div>
 
               <div className="fixed bottom-0 left-0 w-full bg-white border-t border-zinc-100 p-6 space-y-4 z-40">
+                {descontoPct > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-zinc-400">Subtotal</span>
+                      <span className="text-zinc-500">R$ {fmtBRL(subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-emerald-600 font-medium">Desconto ({fmtPct(descontoPct)})</span>
+                      <span className="text-emerald-600 font-medium">− R$ {fmtBRL(descontoValor)}</span>
+                    </div>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
                   <span className="text-zinc-400 font-medium">Total</span>
                   <span className="text-2xl font-bold">
-                    R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    R$ {fmtBRL(total)}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

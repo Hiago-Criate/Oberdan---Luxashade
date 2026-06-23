@@ -32,3 +32,29 @@ alter table public.revendas enable row level security;
 drop policy if exists "revendas_admin_all" on public.revendas;
 create policy "revendas_admin_all" on public.revendas
   for all to authenticated using (true) with check (true);
+
+-- Identifica a revenda pelo CNPJ (compara só os dígitos) para o app aplicar o
+-- desconto e preencher os dados do cliente no orçamento/PDF. SECURITY DEFINER +
+-- grant a anon: o app público chama, mas só recebe dados de UM CNPJ informado —
+-- nunca a tabela inteira. Retorna a 1ª revenda ATIVA com aquele CNPJ.
+create or replace function public.get_revenda_by_cnpj(p_cnpj text)
+returns table (
+  nome text, desconto numeric, acesso text, vendedor text,
+  cod_vendedor text, telefone text, codigo text, loja text, filial text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select r.nome, r.desconto, r.acesso, r.vendedor,
+         r.cod_vendedor, r.telefone, r.codigo, r.loja, r.filial
+  from public.revendas r
+  where r.ativo
+    and regexp_replace(coalesce(r.cnpj, ''), '[^0-9]', '', 'g') =
+        regexp_replace(coalesce(p_cnpj, ''), '[^0-9]', '', 'g')
+    and regexp_replace(coalesce(p_cnpj, ''), '[^0-9]', '', 'g') <> ''
+  limit 1;
+$$;
+
+grant execute on function public.get_revenda_by_cnpj(text) to anon, authenticated;
