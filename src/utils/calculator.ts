@@ -6,6 +6,7 @@
 
 import { getRemote } from '../data/catalogStore';
 import { motorPriceFor } from './motorPrices';
+import { curvaByCodigo } from '../data/trilhoCurvas';
 
 type Comp = { c: string; q: number; f: string; v: number };
 
@@ -139,7 +140,9 @@ export function calculatePrice(data: any) {
   }
 
   const motorPrice = motorPriceFor(motor, railColor === 'Preto' ? 'Preto' : 'Branco');
-  const finalPrice = (baseTotal + motorPrice) * qty;
+  // Curva calandrada (opcional): valor FIXO por trilho, somado antes de × qtd.
+  const curvaValor = curvaByCodigo(data.curvaCodigo)?.valor ?? 0;
+  const finalPrice = (baseTotal + motorPrice + curvaValor) * qty;
 
   return Math.round(finalPrice * 100) / 100;
 }

@@ -3,9 +3,12 @@ import { motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
 import { calculatePrice, getTrilhoModelNames } from '../../utils/calculator';
 import { getMotors } from '../../utils/motorPrices';
+import { CURVAS_TRILHO, curvaByCodigo } from '../../data/trilhoCurvas';
 import { cn } from '../../utils/cn';
 import type { TrilhoItem } from '../../types/order';
 import type { Brand } from '../../data/brands';
+
+const fmtBRL = (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
 
 const OPENINGS = ['Lateral esquerdo', 'Lateral direita', 'Central'];
 const COLORS = ['Branco', 'Preto'];
@@ -35,6 +38,7 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
       railColor: '',
       motorSide: '',
       motor: '',
+      curvaCodigo: '',
       observacao: '',
       price: 0,
     },
@@ -49,10 +53,11 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
         console.error('Calculation error:', e);
       }
     }
-  }, [item.model, item.opening, item.railColor, item.width, item.motor, item.quantity]);
+  }, [item.model, item.opening, item.railColor, item.width, item.motor, item.quantity, item.curvaCodigo]);
 
   const handleAdd = () => {
     if (!item.opening || !item.railColor || !item.motorSide || !item.motor) return;
+    const curva = curvaByCodigo(item.curvaCodigo);
     const finalItem: TrilhoItem = {
       kind: 'trilho',
       id: initialItem?.id ?? Math.random().toString(36).slice(2, 11),
@@ -67,6 +72,9 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
       railColor: item.railColor,
       motorSide: item.motorSide,
       motor: item.motor,
+      curvaCodigo: curva?.codigo,
+      curvaDescricao: curva?.descricao,
+      curvaValor: curva?.valor,
       observacao: item.observacao?.trim() || undefined,
       price: item.price ?? 0,
     };
@@ -222,6 +230,26 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
           </select>
           <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={18} />
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Curva do Trilho</label>
+        <div className="relative">
+          <select
+            value={item.curvaCodigo ?? ''}
+            onChange={(e) => setItem({ ...item, curvaCodigo: e.target.value })}
+            className="w-full appearance-none bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5 text-sm"
+          >
+            <option value="">Sem curva (trilho reto)</option>
+            {CURVAS_TRILHO.map((c) => (
+              <option key={c.codigo} value={c.codigo}>
+                {c.descricao} — + R$ {fmtBRL(c.valor)}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={18} />
+        </div>
+        <p className="text-[11px] text-zinc-400">Opcional. Valor fixo por trilho, somado ao total.</p>
       </div>
 
       <div className="space-y-2">

@@ -16,6 +16,10 @@ export interface TrilhoItem {
   railColor: string;
   motorSide: string;
   motor: string;
+  // Curva calandrada (opcional do trilho). Vazio = trilho reto. Valor fixo × qtd.
+  curvaCodigo?: string;
+  curvaDescricao?: string;
+  curvaValor?: number;
   // Observação livre da revenda (campo OBS de cada item do pedido).
   observacao?: string;
   price: number;

@@ -535,6 +535,12 @@ function CartItemCard({ item, numero, onEdit, onRemove }: CartItemProps) {
             <span>Lado a lado{item.ladoALadoCom ? `: ${item.ladoALadoCom}` : ''}</span>
           </>
         )}
+        {item.kind === 'trilho' && item.curvaDescricao && (
+          <>
+            <span>•</span>
+            <span>{item.curvaDescricao}</span>
+          </>
+        )}
       </div>
       {item.observacao && (
         <div className="bg-zinc-50 rounded-2xl px-3 py-2">
