@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard, Tag, Ruler, Layers3, Palette, Cpu, Wrench, Settings2,
   History, LogOut, Save, Plus, Trash2, Search, ExternalLink, RefreshCw,
-  AlertTriangle, Check, Lock, RadioTower, X, Upload, FileSpreadsheet, Loader2, CheckCircle2,
+  AlertTriangle, Check, Lock, RadioTower, X, Upload, FileSpreadsheet, Loader2, CheckCircle2, Store,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { cn } from '../utils/cn';
@@ -160,7 +160,7 @@ function Login({ onOk }: { onOk: () => void }) {
 }
 
 // ============================ Shell ============================
-type ModuleKey = 'overview' | 'importar' | 'precos' | 'dimensoes' | 'colecoes' | 'cores' | 'trilhos' | 'motores' | 'emissores' | 'opcionais' | 'config' | 'historico';
+type ModuleKey = 'overview' | 'importar' | 'precos' | 'dimensoes' | 'colecoes' | 'cores' | 'trilhos' | 'motores' | 'emissores' | 'opcionais' | 'revendas' | 'config' | 'historico';
 
 const MODULES: { key: ModuleKey; label: string; icon: any }[] = [
   { key: 'overview', label: 'Visão geral', icon: LayoutDashboard },
@@ -173,6 +173,7 @@ const MODULES: { key: ModuleKey; label: string; icon: any }[] = [
   { key: 'motores', label: 'Motores', icon: Cpu },
   { key: 'emissores', label: 'Emissores', icon: RadioTower },
   { key: 'opcionais', label: 'Opcionais', icon: Plus },
+  { key: 'revendas', label: 'Revendas', icon: Store },
   { key: 'config', label: 'Configurações', icon: Settings2 },
   { key: 'historico', label: 'Histórico', icon: History },
 ];
@@ -268,6 +269,7 @@ export function AdminApp() {
         {mod === 'motores' && <Motores marca={marca} brandFamilias={brandFamilias} toast={toast.show} />}
         {mod === 'emissores' && <Emissores toast={toast.show} />}
         {mod === 'opcionais' && <Opcionais marca={marca} toast={toast.show} />}
+        {mod === 'revendas' && <Revendas toast={toast.show} />}
         {mod === 'config' && <Config toast={toast.show} />}
         {mod === 'historico' && <Historico />}
       </main>
@@ -889,6 +891,133 @@ function Emissores({ toast }: { toast: (m: string) => void }) {
         </div>
       </div>
       <datalist id="motorbrands"><option value="SOMFY" /><option value="IVOLVE" /></datalist>
+    </div>
+  );
+}
+
+// ============================ Revendas (clientes com acesso ao app) ============================
+const ACESSO_OPCOES = [
+  { v: 'LUXA', label: 'Luxashade' },
+  { v: 'SXP', label: 'ShadeXP' },
+  { v: 'AMBOS', label: 'Ambas' },
+] as const;
+
+function AcessoSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const color: Record<string, string> = {
+    LUXA: 'bg-zinc-900 text-white border-zinc-900',
+    SXP: 'bg-sky-50 text-sky-700 border-sky-200',
+    AMBOS: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  };
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={cn('rounded-lg border px-2 py-1.5 text-xs font-medium focus:outline-none', color[value] ?? 'border-zinc-200')}
+    >
+      {ACESSO_OPCOES.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+    </select>
+  );
+}
+
+function Revendas({ toast }: { toast: (m: string) => void }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [erro, setErro] = useState<string | null>(null);
+  const [busca, setBusca] = useState('');
+
+  const reload = () =>
+    fetchAll('revendas', { order: { col: 'nome' } })
+      .then((rs) => { setRows(rs); setErro(null); })
+      .catch((e) => setErro(e?.message ?? 'Falha ao carregar revendas.'));
+  useEffect(() => { reload(); }, []);
+
+  const patch = async (row: any, values: any) => {
+    await updateRow('revendas', row.id, values);
+    setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, ...values } : r)));
+    toast('Revenda atualizada');
+  };
+  const add = async () => {
+    try {
+      const novo = await insertRow('revendas', {
+        codigo: '', loja: '01', filial: '01', nome: 'Nova revenda',
+        telefone: '', cnpj: '', desconto: 0, vendedor: '', cod_vendedor: '',
+        acesso: 'AMBOS', ativo: true,
+      });
+      setRows((rs) => [...rs, novo]);
+      toast('Revenda adicionada');
+    } catch (e: any) {
+      setErro(e?.message ?? 'Falha ao adicionar.');
+    }
+  };
+  const del = async (row: any) => {
+    if (!confirm(`Remover a revenda "${row.nome}"?`)) return;
+    await deleteRow('revendas', row.id);
+    setRows((rs) => rs.filter((r) => r.id !== row.id));
+    toast('Revenda removida');
+  };
+
+  const t = busca.trim().toLowerCase();
+  const filtered = t
+    ? rows.filter((r) => [r.nome, r.cnpj, r.telefone, r.vendedor, r.codigo].some((x) => String(x ?? '').toLowerCase().includes(t)))
+    : rows;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="rounded-xl bg-zinc-50 px-4 py-2 text-xs text-zinc-500">
+          Cadastro das <b>revendas</b> (clientes) que terão acesso ao app. A coluna <b>Acesso</b> define
+          quais apps a revenda pode usar: <b>Luxashade</b>, <b>ShadeXP</b> ou <b>ambas</b>.
+        </p>
+        <button onClick={add} className="flex items-center gap-1 whitespace-nowrap rounded-lg bg-zinc-900 px-3 py-2 text-xs font-medium text-white">
+          <Plus size={14} /> Revenda
+        </button>
+      </div>
+
+      {erro && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <p className="font-semibold">A tabela <code>revendas</code> ainda não existe no banco.</p>
+          <p className="mt-1">Rode uma vez o SQL em <b>Supabase → SQL Editor</b> (arquivo <code>sql/revendas.sql</code> no projeto). Depois recarregue esta aba. Detalhe técnico: {erro}</p>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2">
+        <Search size={15} className="text-zinc-400" />
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, CNPJ, telefone, vendedor…"
+          className="w-full bg-transparent text-sm focus:outline-none" />
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+        <div className="max-h-[64vh] overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-zinc-50"><tr>
+              <Th>Código</Th><Th>Loja</Th><Th>Filial</Th><Th>Nome</Th>
+              <Th>Telefone</Th><Th>CNPJ</Th><Th className="text-right">Desc. %</Th>
+              <Th>Vendedor</Th><Th>Cód. Vend.</Th><Th>Acesso</Th>
+              <Th className="text-center">Ativo</Th><Th />
+            </tr></thead>
+            <tbody className="divide-y divide-zinc-100">
+              {filtered.map((r) => (
+                <tr key={r.id} className={cn('hover:bg-zinc-50', !r.ativo && 'opacity-50')}>
+                  <Td className="w-24"><TxtCell value={r.codigo ?? ''} onCommit={(s) => patch(r, { codigo: s })} /></Td>
+                  <Td className="w-16"><TxtCell value={r.loja ?? ''} onCommit={(s) => patch(r, { loja: s })} /></Td>
+                  <Td className="w-16"><TxtCell value={r.filial ?? ''} onCommit={(s) => patch(r, { filial: s })} /></Td>
+                  <Td className="min-w-[180px]"><TxtCell value={r.nome ?? ''} onCommit={(s) => patch(r, { nome: s })} /></Td>
+                  <Td className="w-32"><TxtCell value={r.telefone ?? ''} placeholder="(00) 00000-0000" onCommit={(s) => patch(r, { telefone: s })} /></Td>
+                  <Td className="w-40"><TxtCell value={r.cnpj ?? ''} placeholder="00.000.000/0000-00" onCommit={(s) => patch(r, { cnpj: s })} /></Td>
+                  <Td className="w-20"><NumCell value={r.desconto} onCommit={(n) => patch(r, { desconto: n })} /></Td>
+                  <Td className="w-32"><TxtCell value={r.vendedor ?? ''} onCommit={(s) => patch(r, { vendedor: s })} /></Td>
+                  <Td className="w-20"><TxtCell value={r.cod_vendedor ?? ''} onCommit={(s) => patch(r, { cod_vendedor: s })} /></Td>
+                  <Td className="w-28"><AcessoSelect value={r.acesso ?? 'AMBOS'} onChange={(v) => patch(r, { acesso: v })} /></Td>
+                  <Td className="text-center"><div className="flex justify-center"><Toggle on={r.ativo} onChange={(v) => patch(r, { ativo: v })} /></div></Td>
+                  <Td><button onClick={() => del(r)} className="text-zinc-300 hover:text-red-500"><Trash2 size={15} /></button></Td>
+                </tr>
+              ))}
+              {filtered.length === 0 && !erro && (
+                <tr><Td className="text-zinc-400">Nenhuma revenda cadastrada. Clique em “Revenda” para adicionar.</Td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

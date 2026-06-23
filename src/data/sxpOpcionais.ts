@@ -73,6 +73,14 @@ export const SXP_CONTROLES_MOTORIZADA: readonly OpcionalRule[] = [
 const FALLBACK_REGRA_4X: ReadonlySet<string> = new Set(['ROLO', 'TRIPLE SHADE', 'DOUBLE VISION']);
 export const SXP_ALTURAS_COMANDO_MM: readonly number[] = [500, 1000, 1200, 1500, 1800, 2000, 2500, 3000];
 
+// Luxashade — acionamento MANUAL por corrente contínua (Lília, 2026-06-23).
+// Para estas famílias o comando manual usa corrente contínua, disponível só nestas
+// alturas. A revenda DEVE informar a altura do comando (vira chips, não texto livre).
+export const LUXA_ALTURAS_COMANDO_MM: readonly number[] = [500, 1000, 1200, 1500, 1800, 2000, 2500, 3000, 4000, 5000];
+export const LUXA_CORRENTE_CONTINUA_FAMILIAS: ReadonlySet<string> = new Set([
+  'ROMAN SHADE', 'DUAL SHADE', 'SOFT SHADE', 'CELULAR SHADE',
+]);
+
 // ----- Conversão remoto -> OpcionalRule -----
 function fromRemote(o: RemoteOpcional): OpcionalRule {
   return {
@@ -98,6 +106,22 @@ export function getSxpAlturasComando(): readonly number[] {
   const r = getRemote();
   if (r && Array.isArray(r.config?.sxp_alturas_comando)) return r.config.sxp_alturas_comando as number[];
   return SXP_ALTURAS_COMANDO_MM;
+}
+
+export function getLuxaAlturasComando(): readonly number[] {
+  const r = getRemote();
+  if (r && Array.isArray(r.config?.luxa_alturas_comando)) return r.config.luxa_alturas_comando as number[];
+  return LUXA_ALTURAS_COMANDO_MM;
+}
+
+// True quando o comando manual desta família (no app Luxashade) é por corrente
+// contínua → altura escolhida em chips a partir de getLuxaAlturasComando().
+export function usaCorrenteContinua(familia: string): boolean {
+  const r = getRemote();
+  if (r && Array.isArray(r.config?.luxa_corrente_continua_familias)) {
+    return (r.config.luxa_corrente_continua_familias as string[]).includes(familia);
+  }
+  return LUXA_CORRENTE_CONTINUA_FAMILIAS.has(familia);
 }
 
 export function opcionaisFor(modelo: string): readonly OpcionalRule[] {

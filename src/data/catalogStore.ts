@@ -70,6 +70,17 @@ export interface RemoteCatalog {
 const normAcab = (c: string): string =>
   (({ '1': '01', '2': '02', '3': '03', '5': '05' } as Record<string, string>)[c] ?? c);
 
+// Correção de rótulo de tecido (Lília, 2026-06-23): nestes modelos o tipo gravado
+// como "Outros" é, na verdade, TRANSLÚCIDO. Corrigimos na FONTE (não só no rótulo)
+// para refletir em todo lugar — chips, coleções, cálculo de preço, carrinho, PDF e
+// webhook. Demais modelos com "Outros" (rolo/romana/celular) seguem inalterados.
+const TIPO_OUTROS_E_TRANSLUCIDO = /SOFT SHADE|TRIPLE SHADE|DUAL SHADE|DOUBLE VISION/i;
+function normalizeTipoTecido<T extends { tipo: string; modelo: string }>(p: T): T {
+  return p.tipo === 'Outros' && TIPO_OUTROS_E_TRANSLUCIDO.test(p.modelo)
+    ? { ...p, tipo: 'Translucido' }
+    : p;
+}
+
 const STATIC_PRODUCTS: Product[] = ROWS.map((r) => ({
   familia: FAMILIAS[r[0] as number],
   acionamento: ACIONAMENTOS[r[1] as number],
@@ -81,7 +92,7 @@ const STATIC_PRODUCTS: Product[] = ROWS.map((r) => ({
   vlrM2: r[7] as number,
   codigo: r[8] as string,
   largMaxOverride: null,
-}));
+})).map(normalizeTipoTecido);
 
 const STATIC_CORES_ACAB = ['01', '02', '03', '05'];
 
@@ -193,7 +204,9 @@ export async function hydrateCatalog(): Promise<'remote' | 'static'> {
       familia === 'TOLDOS' || (!!codigo && TOLDO_GRUPOS.includes(String(codigo).split('.')[0]));
     remote.familias = remote.familias.filter((f) => f.nome !== 'TOLDOS');
     remote.modelos = remote.modelos.filter((m) => m.familia !== 'TOLDOS');
-    remote.products = remote.products.filter((p) => !ehToldo(p.codigo, p.familia));
+    remote.products = remote.products
+      .filter((p) => !ehToldo(p.codigo, p.familia))
+      .map(normalizeTipoTecido);
     return 'remote';
   } catch (e) {
     console.warn('[catalog] Supabase indisponível — usando catálogo estático.', e);

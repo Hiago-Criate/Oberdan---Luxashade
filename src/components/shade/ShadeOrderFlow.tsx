@@ -19,6 +19,8 @@ import {
   opcionaisFor,
   requiresAltura4xLargura,
   getSxpAlturasComando,
+  getLuxaAlturasComando,
+  usaCorrenteContinua,
 } from '../../data/sxpOpcionais';
 import { StepShell } from './steps/StepShell';
 import { SelectField } from './steps/SelectField';
@@ -252,6 +254,12 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
 
   // Altura do comando — só MANUAL.
   const alturaComandoReady = !isManual || comandoAlturaMm > 0;
+  // Comando por chips (lista fixa de alturas) em vez de texto livre:
+  //  • ShadeXP: sempre;
+  //  • Luxashade: famílias com corrente contínua (ROMAN/DUAL/SOFT/CELULAR SHADE).
+  const comandoCorrenteContinua = !isSxp && usaCorrenteContinua(familia);
+  const comandoComChips = isSxp || comandoCorrenteContinua;
+  const alturasComando = isSxp ? getSxpAlturasComando() : getLuxaAlturasComando();
 
   // Módulos assimétricos — só produtos DUPLA.
   const modEsqMm = Number(draft.modLargEsqStr) || 0;
@@ -550,14 +558,16 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
             <StepShell
               label="Altura do Comando (mm)"
               hint={
-                isSxp
+                comandoCorrenteContinua
+                  ? 'Acionamento por corrente contínua. A revenda deve informar a altura do comando.'
+                  : comandoComChips
                   ? 'Alturas padrão: 500, 1.000, 1.200, 1.500, 1.800, 2.000, 2.500 ou 3.000 mm.'
                   : 'Em milímetros.'
               }
             >
-              {isSxp ? (
+              {comandoComChips ? (
                 <div className="grid grid-cols-4 gap-2">
-                  {getSxpAlturasComando().map((mm) => {
+                  {alturasComando.map((mm) => {
                     const active = comandoAlturaMm === mm;
                     return (
                       <button
