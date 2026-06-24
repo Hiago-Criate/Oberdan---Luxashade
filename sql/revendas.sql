@@ -1,5 +1,6 @@
 -- Tabela de REVENDAS (clientes que terão acesso ao app Luxashade / ShadeXP).
--- Rode UMA vez no Supabase → SQL Editor (projeto jlfzjhkeebqchfqrdwer).
+-- Já aplicado no projeto "autoai" (umvbrahsqvqeondwtikm) em 2026-06-24.
+-- (Mantido aqui como referência / para recriar em outro ambiente.)
 -- Depois a aba "Revendas" no /admin passa a salvar e listar normalmente.
 --
 -- Campos espelham a planilha da Lília (Filial, Código, Loja, Nome, Desconto,

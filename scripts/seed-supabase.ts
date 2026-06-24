@@ -20,8 +20,8 @@ import {
   brandFromFamilia, TRILHO_OPT,
 } from '../src/data/brands';
 
-const SUPABASE_URL = 'https://jlfzjhkeebqchfqrdwer.supabase.co';
-const SUPABASE_KEY = 'sb_publishable_c10JI8KBD9x4ADqRoNuXpw_Kgnvds7h';
+const SUPABASE_URL = 'https://umvbrahsqvqeondwtikm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_thvgLpTYDPajbwUrwq8Agw_n9zeywnD';
 const ADMIN_EMAIL = process.env.SUPABASE_ADMIN_EMAIL || 'admin@luxashade.app';
 const ADMIN_PASSWORD = process.env.SUPABASE_ADMIN_PASSWORD || 'LuxaShade#2026';
 
