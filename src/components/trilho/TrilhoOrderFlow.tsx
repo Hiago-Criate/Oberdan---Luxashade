@@ -4,15 +4,18 @@ import { ChevronDown } from 'lucide-react';
 import { calculatePrice, getTrilhoModelNames } from '../../utils/calculator';
 import { getMotors } from '../../utils/motorPrices';
 import { CURVAS_TRILHO, curvaByCodigo } from '../../data/trilhoCurvas';
+import { motorsForTrilho, validarTrilho, LARGURA_MAX_TRILHO_MM } from '../../data/trilhoPeso';
 import { cn } from '../../utils/cn';
 import type { TrilhoItem } from '../../types/order';
 import type { Brand } from '../../data/brands';
 
 const fmtBRL = (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+const fmtM = (mm: number) => (mm / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 
 const OPENINGS = ['Lateral esquerdo', 'Lateral direita', 'Central'];
 const COLORS = ['Branco', 'Preto'];
 const MOTOR_SIDES = ['Direito', 'Esquerdo'];
+const FIXACOES = ['Teto', 'Kit Parede (1 trilho)', 'Kit Parede (2 trilhos)'];
 
 interface Props {
   brand: Brand;
@@ -39,6 +42,7 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
       motorSide: '',
       motor: '',
       curvaCodigo: '',
+      fixacao: 'Teto',
       observacao: '',
       price: 0,
     },
@@ -54,6 +58,24 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
       }
     }
   }, [item.model, item.opening, item.railColor, item.width, item.motor, item.quantity, item.curvaCodigo]);
+
+  // ----- Regras da tabela peso (trilhos.txt) -----
+  const larguraMm = Number(item.width) || 0;
+  const larguraExcede = larguraMm > LARGURA_MAX_TRILHO_MM;
+  // Motores viáveis para esta largura + curva + cor (filtra IV60 em PRETO, etc.).
+  const motoresViaveis = motorsForTrilho(getMotors(), larguraMm, item.curvaCodigo, item.railColor || '');
+  const semMotorViavel = larguraMm > 0 && !larguraExcede && motoresViaveis.length === 0;
+  const viab = item.motor ? validarTrilho(item.motor, item.curvaCodigo, larguraMm) : null;
+  const temCurva = !!item.curvaCodigo;
+  const prazoDias = temCurva ? 7 : 3;
+
+  // Limpa o motor se ele deixar de ser viável (mudou largura / curva / cor).
+  useEffect(() => {
+    if (item.motor && !motoresViaveis.includes(item.motor)) {
+      setItem((prev) => ({ ...prev, motor: '' }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [larguraMm, item.curvaCodigo, item.railColor]);
 
   const handleAdd = () => {
     if (!item.opening || !item.railColor || !item.motorSide || !item.motor) return;
@@ -75,6 +97,9 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
       curvaCodigo: curva?.codigo,
       curvaDescricao: curva?.descricao,
       curvaValor: curva?.valor,
+      fixacao: item.fixacao,
+      pesoMaxKg: viab?.pesoMaxKg ?? undefined,
+      prazoDias,
       observacao: item.observacao?.trim() || undefined,
       price: item.price ?? 0,
     };
@@ -137,6 +162,13 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
           />
         </div>
       </div>
+      {larguraExcede && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+          <p className="text-[11px] leading-snug text-red-600">
+            A largura do trilho é de no máximo <span className="font-semibold">15.000 mm (15 m)</span>.
+          </p>
+        </div>
+      )}
 
       <div className="space-y-2">
         <label className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Quantidade</label>
@@ -212,26 +244,7 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
         </div>
       </div>
 
-      <div className="space-y-2">
-        <label className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Motor</label>
-        <div className="relative">
-          <select
-            value={item.motor}
-            onChange={(e) => setItem({ ...item, motor: e.target.value })}
-            className={cn(
-              'w-full appearance-none bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5 text-sm',
-              !item.motor && 'text-zinc-400',
-            )}
-          >
-            <option value="">Escolha o motor</option>
-            {getMotors().map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={18} />
-        </div>
-      </div>
-
+      {/* Curva — vem ANTES do motor: define a viabilidade (tabela peso). */}
       <div className="space-y-2">
         <label className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Curva do Trilho</label>
         <div className="relative">
@@ -249,7 +262,79 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
           </select>
           <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={18} />
         </div>
-        <p className="text-[11px] text-zinc-400">Opcional. Valor fixo por trilho, somado ao total.</p>
+        {temCurva ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+            <p className="text-[11px] leading-snug text-amber-700">
+              Trilho curvo: é necessário <span className="font-semibold">enviar o molde para a fábrica</span>. Valor fixo somado ao total.
+            </p>
+          </div>
+        ) : (
+          <p className="text-[11px] text-zinc-400">Opcional. Valor fixo por trilho, somado ao total.</p>
+        )}
+      </div>
+
+      {/* Motor — só lista os viáveis p/ largura + curva + cor (tabela peso). */}
+      <div className="space-y-2">
+        <label className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Motor</label>
+        <div className="relative">
+          <select
+            value={item.motor}
+            disabled={semMotorViavel}
+            onChange={(e) => setItem({ ...item, motor: e.target.value })}
+            className={cn(
+              'w-full appearance-none bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5 text-sm disabled:bg-zinc-50',
+              !item.motor && 'text-zinc-400',
+            )}
+          >
+            <option value="">Escolha o motor</option>
+            {motoresViaveis.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={18} />
+        </div>
+        {semMotorViavel && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+            <p className="text-[11px] leading-snug text-red-600">
+              Não é possível fabricar um trilho de <span className="font-semibold">{fmtM(larguraMm)} m</span> {temCurva ? 'com essa curva' : 'reto'} com nenhum motor.
+              Reduza a largura{temCurva ? ' ou remova a curva' : ''}.
+            </p>
+          </div>
+        )}
+        {viab?.ok && viab.pesoMaxKg != null && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <p className="text-[11px] leading-snug text-emerald-700">
+              Peso máximo da cortina: <span className="font-semibold">{viab.pesoMaxKg} kg</span>.
+              Largura máx deste motor{temCurva ? ' + curva' : ''}: {viab.larguraMaxM} m.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Tipo de fixação (informativo — preço dos kits virá com a planilha). */}
+      <div className="space-y-2">
+        <label className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Tipo de Fixação</label>
+        <div className="grid grid-cols-3 gap-2">
+          {FIXACOES.map((f) => (
+            <button
+              key={f}
+              onClick={() => setItem({ ...item, fixacao: f })}
+              className={cn(
+                'py-3 px-2 text-[10px] uppercase tracking-tighter rounded-xl border transition-all leading-tight',
+                item.fixacao === f ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-500 border-zinc-200',
+              )}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Prazo de produção */}
+      <div className="rounded-xl bg-zinc-50 px-3 py-2">
+        <p className="text-[11px] text-zinc-500">
+          Prazo de produção: <span className="font-semibold text-zinc-700">{prazoDias} dias úteis</span> (trilho {temCurva ? 'curvo' : 'reto'}).
+        </p>
       </div>
 
       <div className="space-y-2">
@@ -272,7 +357,7 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
         </div>
         <button
           onClick={handleAdd}
-          disabled={!item.opening || !item.railColor || !item.motorSide || !item.motor}
+          disabled={!item.opening || !item.railColor || !item.motorSide || !item.motor || larguraExcede}
           className="bg-zinc-900 text-white px-8 py-4 rounded-2xl font-medium shadow-lg shadow-zinc-200 disabled:opacity-40 transition-opacity"
         >
           {initialItem ? 'Salvar' : 'Adicionar'}

@@ -88,6 +88,9 @@ function linhasDoItem(it: OrderItem): ItemLinhas {
   if (it.motor && it.motor !== 'SEM MOTOR (INFORMATIVO)')
     subs.push(`${it.motor}      Lado Motor: ${it.motorSide}`);
   if (it.curvaDescricao) subs.push(`Curva: ${it.curvaDescricao}${it.curvaCodigo ? ` (${it.curvaCodigo})` : ''}`);
+  if (it.fixacao) subs.push(`Fixação: ${it.fixacao}`);
+  if (it.pesoMaxKg != null) subs.push(`Peso máx. da cortina: ${it.pesoMaxKg} kg`);
+  if (it.prazoDias) subs.push(`Prazo de produção: ${it.prazoDias} dias úteis`);
   if (it.observacao) subs.push(`OBS.: ${it.observacao}`);
   return { desc: `TRILHO ${it.model}${it.railColor ? ` ${it.railColor}` : ''}`, um: 'UN', subs };
 }

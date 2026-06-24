@@ -541,6 +541,18 @@ function CartItemCard({ item, numero, onEdit, onRemove }: CartItemProps) {
             <span>{item.curvaDescricao}</span>
           </>
         )}
+        {item.kind === 'trilho' && item.fixacao && (
+          <>
+            <span>•</span>
+            <span>{item.fixacao}</span>
+          </>
+        )}
+        {item.kind === 'trilho' && item.pesoMaxKg != null && (
+          <>
+            <span>•</span>
+            <span>cortina até {item.pesoMaxKg} kg</span>
+          </>
+        )}
       </div>
       {item.observacao && (
         <div className="bg-zinc-50 rounded-2xl px-3 py-2">

@@ -20,6 +20,12 @@ export interface TrilhoItem {
   curvaCodigo?: string;
   curvaDescricao?: string;
   curvaValor?: number;
+  // Tipo de fixação (Teto / Kit Suporte Parede 1 ou 2 trilhos). Informativo —
+  // o preço dos kits virá com a planilha de acessórios.
+  fixacao?: string;
+  // Validação da tabela peso: peso máx da cortina (informativo) + prazo de produção.
+  pesoMaxKg?: number | null;
+  prazoDias?: number;
   // Observação livre da revenda (campo OBS de cada item do pedido).
   observacao?: string;
   price: number;
