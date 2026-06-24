@@ -215,6 +215,17 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
   // Limites do modelo selecionado (para hint nos inputs).
   const limits = getLimits(familia, draft.acionamento, draft.modelo);
 
+  // Rótulo do modelo com as medidas máximas (pedido da Lília):
+  // "MODELO (largura máx x altura máx | m² máx)" — ex.: "ROLLER SHADE LX38 (2,30 x 3,50 | 7,00 m²)".
+  // O valor selecionado continua sendo só o nome do modelo.
+  const modeloDescricao = (modelo: string): string => {
+    const lim = getLimits(familia, draft.acionamento, modelo);
+    if (!lim) return modelo;
+    const m = (mm: number) => (mm / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const v = (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `${modelo} (${m(lim.largMax)} x ${m(lim.altMax)} | ${v(lim.m2Max)} m²)`;
+  };
+
   // Estoque (Sob Consulta) da coleção / cor selecionadas.
   const estCol = useMemo(() => estoqueColecaoMap(), []);
   const estCor = useMemo(() => estoqueCorMap(), []);
@@ -422,6 +433,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
             value={draft.modelo}
             options={modeloOpts}
             placeholder="Escolha o modelo"
+            renderLabel={modeloDescricao}
             onChange={(v) =>
               setDraft((d) => ({
                 ...d,

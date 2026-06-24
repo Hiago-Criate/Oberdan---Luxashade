@@ -8,11 +8,14 @@ interface Props {
   placeholder?: string;
   disabled?: boolean;
   onChange: (v: string) => void;
+  /** Rótulo exibido (e usado na busca). O valor selecionado continua sendo `o`. */
+  renderLabel?: (v: string) => string;
 }
 
 // Combobox simples: input com filtro + lista cliclável. Usado em listas
 // longas (130 cores de tecido, 67 coleções) para evitar dropdown gigante.
-export function ComboBox({ value, options, placeholder, disabled, onChange }: Props) {
+export function ComboBox({ value, options, placeholder, disabled, onChange, renderLabel }: Props) {
+  const label = (o: string) => (renderLabel ? renderLabel(o) : o);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [dropUp, setDropUp] = useState(false);
@@ -49,8 +52,8 @@ export function ComboBox({ value, options, placeholder, disabled, onChange }: Pr
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return options;
-    return options.filter((o) => o.toLowerCase().includes(q));
-  }, [options, query]);
+    return options.filter((o) => label(o).toLowerCase().includes(q));
+  }, [options, query, renderLabel]);
 
   return (
     <div ref={containerRef} className="relative">
@@ -66,7 +69,7 @@ export function ComboBox({ value, options, placeholder, disabled, onChange }: Pr
         )}
       >
         <span className={cn('flex-1 text-left break-words leading-snug text-sm', !value && 'text-zinc-400')}>
-          {value || placeholder || 'Selecione…'}
+          {value ? label(value) : placeholder || 'Selecione…'}
         </span>
         <ChevronDown
           size={18}
@@ -120,7 +123,7 @@ export function ComboBox({ value, options, placeholder, disabled, onChange }: Pr
                     : 'hover:bg-zinc-50 text-zinc-700',
                 )}
               >
-                {o}
+                {label(o)}
               </button>
             ))}
           </div>
