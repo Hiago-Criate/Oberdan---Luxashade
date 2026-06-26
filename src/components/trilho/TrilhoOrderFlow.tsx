@@ -15,7 +15,7 @@ const fmtM = (mm: number) => (mm / 1000).toLocaleString('pt-BR', { maximumFracti
 const OPENINGS = ['Lateral esquerdo', 'Lateral direita', 'Central'];
 const COLORS = ['Branco', 'Preto'];
 const MOTOR_SIDES = ['Direito', 'Esquerdo'];
-const FIXACOES = ['Teto', 'Kit Parede (1 trilho)', 'Kit Parede (2 trilhos)'];
+const FIXACOES = ['Teto', 'Parede (1 trilho)', 'Parede (2 trilhos)'];
 
 interface Props {
   brand: Brand;
@@ -311,7 +311,8 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
         )}
       </div>
 
-      {/* Tipo de fixação (informativo — preço dos kits virá com a planilha). */}
+      {/* Tipo de fixação. Teto = padrão sem custo; Parede = valor repassado pelo
+          vendedor (cobrança automática fica p/ depois, conforme a Lília). */}
       <div className="space-y-2">
         <label className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Tipo de Fixação</label>
         <div className="grid grid-cols-3 gap-2">
@@ -328,6 +329,9 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
             </button>
           ))}
         </div>
+        {item.fixacao && item.fixacao !== 'Teto' && (
+          <p className="text-[11px] text-zinc-400">O valor desta fixação é repassado pelo vendedor.</p>
+        )}
       </div>
 
       {/* Prazo de produção */}
