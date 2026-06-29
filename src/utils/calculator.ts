@@ -55,16 +55,6 @@ function trilhoComponentes(codigo: string): Comp[] | null {
   return PRODUTOS[codigo] ? (PRODUTOS[codigo].componentes as Comp[]) : null;
 }
 
-function multiplicador(cod: string): number {
-  const isPreto = cod.includes('05C') || cod.includes('05L');
-  const r = getRemote();
-  const cfg = r?.config?.trilho_multiplicador;
-  if (cfg && typeof cfg.branco === 'number' && typeof cfg.preto === 'number') {
-    return isPreto ? cfg.preto : cfg.branco;
-  }
-  return isPreto ? 1.2 : 1.1;
-}
-
 // ----- Avaliador de fórmulas (igual ao original) -----
 function calcularQuantidade(formula: string, L: number, qtdBase: number) {
   if (!formula) return qtdBase;
@@ -89,30 +79,13 @@ function calcularQuantidade(formula: string, L: number, qtdBase: number) {
   }
 }
 
-function isLateral(cod: string) {
-  return cod.endsWith('L');
-}
-
-function calcularValorComponente(comp: Comp, giCod: string, larguraMM: number) {
-  const larguraMetros = larguraMM / 1000;
-  const quantidade = calcularQuantidade(comp.f, larguraMM, comp.q);
-
-  if ((comp as any).p === 'SNN') return 0;
-  if (comp.c === '152.03.00' || comp.c === '154.02.00') return 0;
-
-  if (comp.c === '155.15.00') {
-    if (larguraMetros > 6 && larguraMetros < 12) return comp.v * quantidade;
-    if (larguraMetros >= 12) return comp.v * quantidade * 2;
-    return 0;
-  }
-
-  const compWave = ['111.12.00', '111.13.00', '111.56.00'];
-  if (compWave.includes(comp.c)) {
-    if (larguraMetros > 6 && isLateral(giCod)) return 0;
-    if (larguraMetros > 12 && !isLateral(giCod)) return 0;
-  }
-
-  return comp.v * quantidade * multiplicador(giCod);
+// Valor do componente = preço unitário de venda × quantidade (pela fórmula).
+// O preço unitário (comp.v) já vem com o markup de cor embutido (1,1 branco /
+// 1,2 preto, conforme a planilha SG1), e a quantidade vem da fórmula sobre a
+// largura — exatamente o modelo da planilha: VALOR = Σ(unit × qtd). Sem regras
+// especiais nem multiplicador adicional (eram quirks que divergiam da planilha).
+function calcularValorComponente(comp: Comp, larguraMM: number) {
+  return comp.v * calcularQuantidade(comp.f, larguraMM, comp.q);
 }
 
 export function calculatePrice(data: any) {
@@ -136,7 +109,7 @@ export function calculatePrice(data: any) {
 
   let baseTotal = 0;
   for (const comp of componentes) {
-    baseTotal += calcularValorComponente(comp, codigo, largura);
+    baseTotal += calcularValorComponente(comp, largura);
   }
 
   const motorPrice = motorPriceFor(motor, railColor === 'Preto' ? 'Preto' : 'Branco');
