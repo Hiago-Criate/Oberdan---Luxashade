@@ -18,7 +18,7 @@ import { BRAND_LABEL, type Brand } from './data/brands';
 import { cn } from './utils/cn';
 import { generateOrcamentoPdf, type OrcamentoPdf } from './utils/orcamentoPdf';
 import { fetchRevendaByCnpj, type Revenda } from './data/revenda';
-import type { OrderItem } from './types/order';
+import { modulosDuplaLabel, type OrderItem } from './types/order';
 
 const fmtBRL = (n: number) => (n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
 const fmtPct = (n: number) => `${(n || 0).toLocaleString('pt-BR')}%`;
@@ -465,6 +465,7 @@ function CartItemCard({ item, numero, onEdit, onRemove }: CartItemProps) {
       : item.kind === 'emissor'
       ? `${item.motorBrand} · ${canaisLabel(item.canais)}`
       : `${item.widthMm}x${item.heightMm}mm`;
+  const modLabel = item.kind === 'shade' ? modulosDuplaLabel(item) : null;
 
   return (
     <motion.div
@@ -517,10 +518,10 @@ function CartItemCard({ item, numero, onEdit, onRemove }: CartItemProps) {
             <span>Motor {item.motorLado}</span>
           </>
         )}
-        {item.kind === 'shade' && item.modulosAssimetricos && item.moduloLargEsqMm && item.moduloLargDirMm && (
+        {modLabel && (
           <>
             <span>•</span>
-            <span>Mód. E {item.moduloLargEsqMm} / D {item.moduloLargDirMm}mm</span>
+            <span>Mód. {modLabel}</span>
           </>
         )}
         {item.kind === 'shade' && item.mesmoAmbiente && (

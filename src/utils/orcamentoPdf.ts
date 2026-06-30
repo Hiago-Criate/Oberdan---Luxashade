@@ -6,7 +6,7 @@
 
 import type { TDocumentDefinitions, Content } from 'pdfmake/interfaces';
 import type { Brand } from '../data/brands';
-import type { OrderItem } from '../types/order';
+import { modulosDuplaLabel, type OrderItem } from '../types/order';
 
 export interface OrcamentoInput {
   tipo: 'orcamento' | 'pedido';
@@ -67,8 +67,8 @@ function linhasDoItem(it: OrderItem): ItemLinhas {
       }`,
     ];
     if (it.motor && it.motor !== 'SEM MOTOR (INFORMATIVO)') subs.push(it.motor);
-    if (it.modulosAssimetricos && it.moduloLargEsqMm && it.moduloLargDirMm)
-      subs.push(`Módulos: Esq. ${fmtMm(it.moduloLargEsqMm)} / Dir. ${fmtMm(it.moduloLargDirMm)} mm`);
+    const modLabel = modulosDuplaLabel(it);
+    if (modLabel) subs.push(`Módulos: ${modLabel}`);
     if (it.mesmoAmbiente) subs.push('Mesmo ambiente');
     if (it.ladoALado) subs.push(`Lado a lado${it.ladoALadoCom ? `: ${it.ladoALadoCom}` : ''}`);
     if (it.observacao) subs.push(`OBS.: ${it.observacao}`);

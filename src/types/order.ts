@@ -121,3 +121,16 @@ export const COR_ACAB_NOMES: Record<string, string> = {
 export function motorColorFromAcabamento(cod: string): 'Branco' | 'Preto' {
   return cod === '05' || cod === '5' ? 'Preto' : 'Branco';
 }
+
+// Para produtos DUPLA, descreve as larguras dos 2 módulos em metros
+// (ex: "3,00 + 3,00 m"). Simétrico → divide a largura total em 2; assimétrico →
+// usa os módulos informados (Esq./Dir.). Retorna null se não for DUPLA.
+export function modulosDuplaLabel(it: ShadeItem): string | null {
+  if (!/\bDUPLA\b/i.test(it.modelo)) return null;
+  const m = (mm: number) =>
+    (mm / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (it.modulosAssimetricos && it.moduloLargEsqMm && it.moduloLargDirMm)
+    return `Esq. ${m(it.moduloLargEsqMm)} + Dir. ${m(it.moduloLargDirMm)} m`;
+  const meio = Math.round(it.widthMm / 2);
+  return `${m(meio)} + ${m(it.widthMm - meio)} m`;
+}

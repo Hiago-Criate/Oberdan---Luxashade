@@ -27,11 +27,15 @@ export interface Emissor {
 
 // ----- Fallback estático (espelha o seed inicial do banco) -----
 export const EMISSORES_FALLBACK: readonly Emissor[] = [
-  { codigo: '155.34.01', descricao: 'Emissor Shadeexp 1 Canal', valor: 98, canais: 1, motorBrand: 'IVOLVE', brands: ['shadexp'] },
-  { codigo: '155.35.01', descricao: 'Emissor Shadeexp 15 Canais', valor: 158, canais: 15, motorBrand: 'IVOLVE', brands: ['shadexp'] },
-  { codigo: '222.06.00', descricao: 'Controle Somfy Situo 1 Canal', valor: 290, canais: 1, motorBrand: 'SOMFY', brands: ['luxashade', 'shadexp'] },
-  { codigo: '222.10.00', descricao: 'Controle Somfy Situo 4 Canais + Grupo', valor: 550, canais: 4, motorBrand: 'SOMFY', brands: ['luxashade', 'shadexp'] },
-  { codigo: '222.05.00', descricao: 'Controle Somfy 16 Canais Rts', valor: 1680, canais: 16, motorBrand: 'SOMFY', brands: ['luxashade', 'shadexp'] },
+  { codigo: '155.34.01', descricao: 'Emissor Shade Express 1 Canal', valor: 108, canais: 1, motorBrand: 'IVOLVE', brands: ['shadexp'] },
+  { codigo: '155.35.01', descricao: 'Emissor Shade Express 15 Canais', valor: 174, canais: 15, motorBrand: 'IVOLVE', brands: ['shadexp'] },
+  { codigo: '222.06.00', descricao: 'Controle Somfy Situo 1 Canal', valor: 319, canais: 1, motorBrand: 'SOMFY', brands: ['luxashade', 'shadexp'] },
+  { codigo: '222.10.00', descricao: 'Controle Somfy Situo 4 Canais + Grupo', valor: 605, canais: 4, motorBrand: 'SOMFY', brands: ['luxashade', 'shadexp'] },
+  { codigo: '222.05.00', descricao: 'Controle Somfy 16 Canais Rts', valor: 1848, canais: 16, motorBrand: 'SOMFY', brands: ['luxashade', 'shadexp'] },
+  { codigo: '155.30.01', descricao: 'Emissor Supremo Luxashade LX18 1 Canal', valor: 198, canais: 1, motorBrand: 'IVOLVE', brands: ['luxashade'] },
+  { codigo: '155.31.01', descricao: 'Emissor Supremo Luxashade LX18 15 Canais', valor: 275, canais: 15, motorBrand: 'IVOLVE', brands: ['luxashade'] },
+  { codigo: '155.28.01', descricao: 'Emissor Standard Luxashade 1 Canal', valor: 108, canais: 1, motorBrand: 'IVOLVE', brands: ['luxashade'] },
+  { codigo: '155.29.01', descricao: 'Emissor Standard Luxashade 15 Canais', valor: 174, canais: 15, motorBrand: 'IVOLVE', brands: ['luxashade'] },
 ];
 
 const VALID_BRANDS: readonly Brand[] = ['luxashade', 'shadexp'];
