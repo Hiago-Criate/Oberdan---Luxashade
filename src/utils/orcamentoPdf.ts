@@ -69,6 +69,13 @@ function linhasDoItem(it: OrderItem): ItemLinhas {
     if (it.motor && it.motor !== 'SEM MOTOR (INFORMATIVO)') subs.push(it.motor);
     const modLabel = modulosDuplaLabel(it);
     if (modLabel) subs.push(`Módulos: ${modLabel}`);
+    // Acessórios/opcionais como sub-linhas "ACESSORIO ... (COR)", no mesmo estilo
+    // do orçamento da fábrica. O valor de cada acessório JÁ está embutido no total
+    // do item (it.price), então aqui são só descritivos — igual ao TOTVS.
+    if (it.opcionais?.length) {
+      const cor = it.corAcabamentoNome ? ` (${it.corAcabamentoNome.toUpperCase()})` : '';
+      for (const op of it.opcionais) subs.push(`ACESSORIO ${op.descricao.toUpperCase()}${cor}`);
+    }
     if (it.mesmoAmbiente) subs.push('Mesmo ambiente');
     if (it.ladoALado) subs.push(`Lado a lado${it.ladoALadoCom ? `: ${it.ladoALadoCom}` : ''}`);
     if (it.observacao) subs.push(`OBS.: ${it.observacao}`);
