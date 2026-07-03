@@ -61,10 +61,12 @@ function linhasDoItem(it: OrderItem): ItemLinhas {
       .filter(Boolean)
       .join(' ');
     const lado = it.comandoLado || it.motorLado;
+    // Altura do comando (só manual) — completa a linha de medidas igual ao TOTVS.
+    const alturaCom = it.comandoAlturaMm ? `      Altura Com.: ${fmtMm(it.comandoAlturaMm)} mm` : '';
     const subs: string[] = [
       `L x A : ${fmtMm(it.widthMm)} x ${fmtMm(it.heightMm)} mm      Ambiente: ${it.ambiente || '-'}${
         lado ? `      Lado Com.: ${lado}` : ''
-      }`,
+      }${alturaCom}`,
     ];
     if (it.motor && it.motor !== 'SEM MOTOR (INFORMATIVO)') subs.push(it.motor);
     const modLabel = modulosDuplaLabel(it);
