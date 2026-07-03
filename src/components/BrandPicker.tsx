@@ -7,6 +7,8 @@ import { cn } from '../utils/cn';
 interface Props {
   onSelect: (brand: Brand) => void;
   onBack: () => void;
+  // Marcas que a revenda tem acesso (do campo `acesso`). Omitido = as duas.
+  allowed?: Brand[];
 }
 
 interface CardProps {
@@ -61,7 +63,9 @@ function BrandCard({ brand, title, onClick }: CardProps) {
   );
 }
 
-export function BrandPicker({ onSelect, onBack }: Props) {
+export function BrandPicker({ onSelect, onBack, allowed }: Props) {
+  const brands: Brand[] = allowed && allowed.length ? allowed : ['luxashade', 'shadexp'];
+  const solo = brands.length === 1;
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -70,15 +74,21 @@ export function BrandPicker({ onSelect, onBack }: Props) {
       className="min-h-svh flex flex-col pt-16 pb-12 space-y-10"
     >
       <div className="text-center space-y-3">
-        <h1 className="text-3xl font-light tracking-tight">Selecione a marca</h1>
+        <h1 className="text-3xl font-light tracking-tight">
+          {solo ? 'Sua linha de produtos' : 'Selecione a marca'}
+        </h1>
         <p className="text-sm text-zinc-500">
-          Cada marca exibe suas próprias famílias de cortinas
+          {solo ? 'Toque para continuar' : 'Cada marca exibe suas próprias famílias de cortinas'}
         </p>
       </div>
 
       <div className="space-y-4">
-        <BrandCard brand="luxashade" title="Luxashade" onClick={() => onSelect('luxashade')} />
-        <BrandCard brand="shadexp" title="ShadeXP" onClick={() => onSelect('shadexp')} />
+        {brands.includes('luxashade') && (
+          <BrandCard brand="luxashade" title="Luxashade" onClick={() => onSelect('luxashade')} />
+        )}
+        {brands.includes('shadexp') && (
+          <BrandCard brand="shadexp" title="ShadeXP" onClick={() => onSelect('shadexp')} />
+        )}
       </div>
 
       <div className="flex-1" />

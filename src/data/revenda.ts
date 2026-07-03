@@ -1,8 +1,9 @@
 // Identificação da revenda (cliente) pelo CNPJ, via RPC get_revenda_by_cnpj
-// (anon). Usado no início do pedido: aplica o desconto cadastrado e preenche os
-// dados do cliente no orçamento/PDF. Sem match → null → cálculo normal.
+// (anon). No início do pedido: CONTROLA O ACESSO às marcas (campo `acesso`),
+// aplica o desconto cadastrado e preenche os dados do cliente no orçamento/PDF.
 
 import { supabase } from '../lib/supabase';
+import type { Brand } from './brands';
 
 export interface Revenda {
   nome: string;
@@ -16,25 +17,47 @@ export interface Revenda {
   filial: string | null;
 }
 
-export async function fetchRevendaByCnpj(cnpj: string): Promise<Revenda | null> {
+// Resultado da identificação. Distingue "não cadastrado" (bloqueia o acesso) de
+// "erro/indisponível" (NÃO bloqueia — falha técnica não é falta de autorização).
+export type RevendaLookup =
+  | { status: 'found'; revenda: Revenda }
+  | { status: 'not_found'; revenda: null }
+  | { status: 'error'; revenda: null };
+
+function mapRow(row: Record<string, unknown>): Revenda {
+  return {
+    nome: (row.nome as string) ?? '',
+    desconto: Number(row.desconto) || 0,
+    acesso: (row.acesso as string) ?? 'AMBOS',
+    vendedor: (row.vendedor as string) ?? null,
+    codVendedor: (row.cod_vendedor as string) ?? null,
+    telefone: (row.telefone as string) ?? null,
+    codigo: (row.codigo as string) ?? null,
+    loja: (row.loja as string) ?? null,
+    filial: (row.filial as string) ?? null,
+  };
+}
+
+// Identifica a revenda pelo CNPJ. Retorna o status para o app decidir o acesso.
+export async function lookupRevendaByCnpj(cnpj: string): Promise<RevendaLookup> {
   const digits = (cnpj || '').replace(/\D/g, '');
-  if (!digits) return null;
+  if (!digits) return { status: 'not_found', revenda: null };
   try {
     const { data, error } = await supabase.rpc('get_revenda_by_cnpj', { p_cnpj: digits });
+    if (error) return { status: 'error', revenda: null };
     const row = Array.isArray(data) ? data[0] : data;
-    if (error || !row) return null;
-    return {
-      nome: row.nome ?? '',
-      desconto: Number(row.desconto) || 0,
-      acesso: row.acesso ?? 'AMBOS',
-      vendedor: row.vendedor ?? null,
-      codVendedor: row.cod_vendedor ?? null,
-      telefone: row.telefone ?? null,
-      codigo: row.codigo ?? null,
-      loja: row.loja ?? null,
-      filial: row.filial ?? null,
-    };
+    if (!row) return { status: 'not_found', revenda: null };
+    return { status: 'found', revenda: mapRow(row) };
   } catch {
-    return null; // banco indisponível / RPC ausente → segue sem desconto
+    return { status: 'error', revenda: null }; // banco indisponível / RPC ausente
   }
+}
+
+// Marcas que a revenda pode ver, a partir do campo `acesso`.
+// 'LUXA' → só Luxashade; 'SXP' → só ShadeXP; qualquer outro ('AMBOS') → as duas.
+export function allowedBrandsFor(acesso: string | null | undefined): Brand[] {
+  const a = (acesso ?? 'AMBOS').toUpperCase();
+  if (a === 'LUXA') return ['luxashade'];
+  if (a === 'SXP') return ['shadexp'];
+  return ['luxashade', 'shadexp'];
 }

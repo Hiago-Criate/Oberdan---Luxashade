@@ -17,7 +17,7 @@ import { BrandPicker } from './components/BrandPicker';
 import { BRAND_LABEL, type Brand } from './data/brands';
 import { cn } from './utils/cn';
 import { generateOrcamentoPdf, type OrcamentoPdf } from './utils/orcamentoPdf';
-import { fetchRevendaByCnpj, type Revenda } from './data/revenda';
+import { lookupRevendaByCnpj, allowedBrandsFor, type Revenda } from './data/revenda';
 import { modulosDuplaLabel, type OrderItem } from './types/order';
 
 const fmtBRL = (n: number) => (n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
@@ -33,6 +33,8 @@ export default function App() {
   const [brand, setBrand] = useState<Brand>('luxashade');
   const [cnpj, setCnpj] = useState('');
   const [revenda, setRevenda] = useState<Revenda | null>(null);
+  const [allowedBrands, setAllowedBrands] = useState<Brand[]>(['luxashade', 'shadexp']);
+  const [cnpjErro, setCnpjErro] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
@@ -46,10 +48,19 @@ export default function App() {
   const descontoValor = subtotal * (descontoPct / 100);
   const total = subtotal - descontoValor;
 
-  // Busca a revenda pelo CNPJ e segue para o pedido (sem travar se não achar).
+  // Identifica a revenda pelo CNPJ e libera as marcas conforme o `acesso`.
+  // 'not_found' → bloqueia (CNPJ sem acesso). 'error' (banco off) → libera as
+  // duas marcas, sem desconto (falha técnica não é falta de autorização).
   const identificarECont = async () => {
     setLookingUp(true);
-    const r = await fetchRevendaByCnpj(cnpj);
+    setCnpjErro('');
+    const res = await lookupRevendaByCnpj(cnpj);
+    setLookingUp(false);
+    if (res.status === 'not_found') {
+      setCnpjErro('CNPJ não cadastrado ou sem acesso liberado. Fale com o seu vendedor.');
+      return;
+    }
+    const r = res.revenda; // 'found' → revenda; 'error' → null (libera as duas marcas)
     setRevenda(r);
     if (r) {
       setUserInfo((u) => ({
@@ -57,8 +68,10 @@ export default function App() {
         phone: u.phone || r.telefone || '',
       }));
     }
-    setLookingUp(false);
-    setStep('order');
+    const allowed = r ? allowedBrandsFor(r.acesso) : (['luxashade', 'shadexp'] as Brand[]);
+    setAllowedBrands(allowed);
+    if (allowed.length === 1) setBrand(allowed[0]);
+    setStep('brand');
   };
 
   const upsertItem = (item: OrderItem) => {
@@ -176,7 +189,7 @@ export default function App() {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => setStep('brand')}
+                  onClick={() => setStep('cnpj')}
                   className="bg-zinc-900 text-white px-10 py-5 rounded-full text-lg font-medium shadow-xl shadow-zinc-200 flex items-center gap-3"
                 >
                   Iniciar Pedido
@@ -192,8 +205,9 @@ export default function App() {
           {step === 'brand' && (
             <BrandPicker
               key="brand"
-              onSelect={(b) => { setBrand(b); setStep('cnpj'); }}
-              onBack={() => setStep('landing')}
+              allowed={allowedBrands}
+              onSelect={(b) => { setBrand(b); setStep('order'); }}
+              onBack={() => setStep('cnpj')}
             />
           )}
 
@@ -206,23 +220,25 @@ export default function App() {
               className="min-h-svh flex flex-col justify-center gap-8"
             >
               <div className="space-y-3">
-                <img
-                  src={brand === 'shadexp' ? '/logo-shadexp.png' : '/logo-luxashade.png'}
-                  alt={BRAND_LABEL[brand]}
-                  className="h-28 object-contain object-left"
-                />
+                <Header />
                 <h2 className="text-2xl font-light text-zinc-800">Identificação</h2>
-                <p className="text-zinc-500 text-sm">Por favor, informe o CNPJ da empresa</p>
+                <p className="text-zinc-500 text-sm">
+                  Informe o CNPJ da sua empresa para liberar o acesso
+                </p>
               </div>
-              <div className="relative">
-                <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
-                <input
-                  type="text"
-                  placeholder="00.000.000/0000-00"
-                  value={cnpj}
-                  onChange={(e) => setCnpj(e.target.value)}
-                  className="w-full bg-white border border-zinc-200 rounded-2xl py-5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all text-lg"
-                />
+              <div className="space-y-3">
+                <div className="relative">
+                  <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
+                  <input
+                    type="text"
+                    placeholder="00.000.000/0000-00"
+                    value={cnpj}
+                    onChange={(e) => { setCnpj(e.target.value); if (cnpjErro) setCnpjErro(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && cnpj && !lookingUp) identificarECont(); }}
+                    className="w-full bg-white border border-zinc-200 rounded-2xl py-5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all text-lg"
+                  />
+                </div>
+                {cnpjErro && <p className="text-sm text-red-600 px-1 leading-snug">{cnpjErro}</p>}
               </div>
               <button
                 disabled={!cnpj || lookingUp}
@@ -231,6 +247,12 @@ export default function App() {
               >
                 {lookingUp ? 'Identificando...' : 'Continuar'}
                 {!lookingUp && <ArrowRight size={20} />}
+              </button>
+              <button
+                onClick={() => setStep('landing')}
+                className="text-sm text-zinc-500 hover:text-zinc-900 transition-colors mx-auto"
+              >
+                ← Voltar
               </button>
             </motion.div>
           )}
@@ -243,7 +265,7 @@ export default function App() {
               onSave={upsertItem}
               onBack={() => {
                 setEditingItem(null);
-                setStep(cart.length ? 'cart' : 'cnpj');
+                setStep(cart.length ? 'cart' : 'brand');
               }}
             />
           )}
