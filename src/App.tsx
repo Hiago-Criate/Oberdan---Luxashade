@@ -10,6 +10,7 @@ import {
   Building2,
   User,
   Phone,
+  Clock,
 } from 'lucide-react';
 import axios from 'axios';
 import { OrderFlow } from './components/OrderFlow';
@@ -18,6 +19,8 @@ import { BRAND_LABEL, type Brand } from './data/brands';
 import { cn } from './utils/cn';
 import { generateOrcamentoPdf, type OrcamentoPdf } from './utils/orcamentoPdf';
 import { lookupRevendaByCnpj, allowedBrandsFor, type Revenda } from './data/revenda';
+import { salvarPedido, listarPedidos, excluirPedido, type PedidoSalvo } from './data/pedidos';
+import { HistoricoDrawer } from './components/HistoricoDrawer';
 import { modulosDuplaLabel, type OrderItem } from './types/order';
 
 const fmtBRL = (n: number) => (n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
@@ -36,6 +39,12 @@ export default function App() {
   const [allowedBrands, setAllowedBrands] = useState<Brand[]>(['luxashade', 'shadexp']);
   const [cnpjErro, setCnpjErro] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
+  // Histórico de pedidos do CNPJ (persistido no Supabase via RPCs).
+  const [pedidoId, setPedidoId] = useState<string | null>(null);
+  const [pedidoNumero, setPedidoNumero] = useState<string | null>(null);
+  const [historico, setHistorico] = useState<PedidoSalvo[]>([]);
+  const [histAberto, setHistAberto] = useState(false);
+  const [histLoading, setHistLoading] = useState(false);
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
   const [tipoEnvio, setTipoEnvio] = useState<TipoEnvio>('pedido');
@@ -71,6 +80,8 @@ export default function App() {
     const allowed = r ? allowedBrandsFor(r.acesso) : (['luxashade', 'shadexp'] as Brand[]);
     setAllowedBrands(allowed);
     if (allowed.length === 1) setBrand(allowed[0]);
+    // Carrega o histórico deste CNPJ em segundo plano (não trava a navegação).
+    listarPedidos(cnpj).then(setHistorico);
     setStep('brand');
   };
 
@@ -97,12 +108,46 @@ export default function App() {
     setCart((prev) => prev.filter((it) => it.id !== id));
   };
 
+  // ----- Histórico de pedidos (por CNPJ) -----
+  const abrirHistorico = async () => {
+    setHistAberto(true);
+    setHistLoading(true);
+    setHistorico(await listarPedidos(cnpj));
+    setHistLoading(false);
+  };
+
+  const carregarPedido = (p: PedidoSalvo) => {
+    // Segurança: não reabrir pedido de uma marca que o CNPJ não tem mais acesso.
+    if (!allowedBrands.includes(p.marca)) {
+      alert('Este pedido usa uma marca que não está mais liberada para o seu CNPJ. Fale com o vendedor.');
+      setHistAberto(false);
+      return;
+    }
+    setCart(p.itens);
+    setBrand(p.marca);
+    // clienteFone não vem no histórico (dado sensível) → preserva o atual.
+    setUserInfo((u) => ({ name: p.clienteNome || u.name, phone: p.clienteFone || u.phone }));
+    // Usa a revenda ATUAL do CNPJ (desconto vigente); snapshot só como fallback.
+    setRevenda(revenda ?? p.revenda);
+    setPedidoId(p.id);
+    setPedidoNumero(p.numero);
+    setTipoEnvio(p.tipo);
+    setEditingItem(null);
+    setHistAberto(false);
+    setStep('cart');
+  };
+
+  const removerPedido = async (id: string) => {
+    const ok = await excluirPedido(id, cnpj);
+    if (ok) setHistorico((prev) => prev.filter((p) => p.id !== id));
+  };
+
   const handleFinalize = async () => {
     setLoading(true);
     try {
       const now = new Date();
       // Nº provisório do documento (o número oficial é atribuído depois no TOTVS).
-      const numero = String(now.getTime()).slice(-6);
+      const numero = pedidoNumero || String(now.getTime()).slice(-6);
 
       // Gera o PDF do orçamento/pedido no modelo do TOTVS. Se falhar, segue
       // enviando os dados estruturados (não perde o pedido).
@@ -124,6 +169,32 @@ export default function App() {
         });
       } catch (e) {
         console.error('PDF generation failed:', e);
+      }
+
+      // Salva/atualiza no histórico do CNPJ (best-effort; reserva o pedido mesmo
+      // que o envio ao webhook falhe).
+      try {
+        const savedId = await salvarPedido({
+          id: pedidoId,
+          cnpj,
+          marca: brand,
+          tipo: tipoEnvio,
+          numero,
+          clienteNome: userInfo.name,
+          clienteFone: userInfo.phone,
+          itens: cart,
+          subtotal,
+          descontoPct,
+          descontoValor,
+          total,
+          revenda,
+        });
+        if (savedId) {
+          setPedidoId(savedId);
+          setPedidoNumero(numero);
+        }
+      } catch (e) {
+        console.error('Falha ao salvar no histórico:', e);
       }
 
       await axios.post(WEBHOOK_URL, {
@@ -289,10 +360,10 @@ export default function App() {
                     <ShoppingBag size={24} />
                     Seu Pedido
                   </h2>
+                  <p className="text-sm text-zinc-400 mt-1">
+                    {cart.length} {cart.length === 1 ? 'item' : 'itens'}
+                  </p>
                 </div>
-                <span className="bg-zinc-100 px-3 py-1 rounded-full text-sm text-zinc-500">
-                  {cart.length} {cart.length === 1 ? 'item' : 'itens'}
-                </span>
               </div>
 
               {revenda && (
@@ -456,6 +527,33 @@ export default function App() {
           )}
         </AnimatePresence>
       </div>
+      {cnpj && (step === 'brand' || step === 'cart' || step === 'final') && (
+        <div className="fixed top-0 left-0 right-0 z-30 pointer-events-none">
+          <div className="max-w-md mx-auto px-6 flex justify-end pt-4">
+            <button
+              onClick={abrirHistorico}
+              className="pointer-events-auto bg-white border border-zinc-200 shadow-md rounded-full h-11 px-3.5 flex items-center gap-1.5 text-zinc-600 hover:text-zinc-900 hover:shadow-lg transition-all"
+              aria-label="Meus pedidos"
+            >
+              <Clock size={17} />
+              <span className="text-xs font-semibold">Meus pedidos</span>
+              {historico.length > 0 && (
+                <span className="bg-zinc-900 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
+                  {historico.length}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+      <HistoricoDrawer
+        open={histAberto}
+        loading={histLoading}
+        pedidos={historico}
+        onClose={() => setHistAberto(false)}
+        onSelect={carregarPedido}
+        onRemove={removerPedido}
+      />
     </div>
   );
 }
