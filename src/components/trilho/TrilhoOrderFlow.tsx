@@ -62,8 +62,8 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
   // ----- Regras da tabela peso (trilhos.txt) -----
   const larguraMm = Number(item.width) || 0;
   const larguraExcede = larguraMm > LARGURA_MAX_TRILHO_MM;
-  // Motores viáveis para esta largura + curva + cor (filtra IV60 em PRETO, etc.).
-  const motoresViaveis = motorsForTrilho(getMotors(), larguraMm, item.curvaCodigo, item.railColor || '');
+  // Motores viáveis para esta largura + curva (a viabilidade da tabela peso).
+  const motoresViaveis = motorsForTrilho(getMotors(), larguraMm, item.curvaCodigo);
   const semMotorViavel = larguraMm > 0 && !larguraExcede && motoresViaveis.length === 0;
   const viab = item.motor ? validarTrilho(item.motor, item.curvaCodigo, larguraMm) : null;
   const temCurva = !!item.curvaCodigo;

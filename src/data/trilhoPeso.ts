@@ -77,15 +77,15 @@ export function validarTrilho(motorNome: string, curvaCodigo: string | null | un
 }
 
 // Motores viáveis para o trilho: filtra a lista pelos que conseguem fabricar
-// aquela largura+curva (tabela peso) e pela cor (IV60 não vai em trilho PRETO).
+// aquela largura+curva (tabela peso). A antiga restrição "IV60 não vai em trilho
+// PRETO" foi REMOVIDA em 2026-07-08 — a Lília liberou o IV60 no preto também
+// (basta o motor estar ativo, com preço branco/preto e Trilho ligado no /admin).
 export function motorsForTrilho(
   motores: readonly string[],
   larguraMm: number,
   curvaCodigo: string | null | undefined,
-  cor: string,
 ): string[] {
   return motores.filter((nome) => {
-    if (cor === 'Preto' && isIvolveIV60(nome)) return false;
     if (larguraMm > 0 && !validarTrilho(nome, curvaCodigo, larguraMm).ok) return false;
     return true;
   });
