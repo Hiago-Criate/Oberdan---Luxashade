@@ -21,6 +21,7 @@ export interface OrcamentoInput {
   total: number; // subtotal − desconto (valor final)
   numero: string; // nº provisório do documento
   now: Date;
+  logoDataUri?: string | null; // logo da marca (base64) p/ o cabeçalho do PDF
 }
 
 // Dados da empresa (do modelo fornecido). Mesma fábrica para as duas marcas;
@@ -106,7 +107,7 @@ function linhasDoItem(it: OrderItem): ItemLinhas {
 
 // ---------- documento ----------
 export function buildDocDefinition(input: OrcamentoInput): TDocumentDefinitions {
-  const { tipo, marca, cnpj, customer, vendedor, items, subtotal, descontoPct, descontoValor, total, numero, now } = input;
+  const { tipo, marca, cnpj, customer, vendedor, items, subtotal, descontoPct, descontoValor, total, numero, now, logoDataUri } = input;
   const titulo = tipo === 'pedido' ? 'PEDIDO DE VENDA' : 'ORÇAMENTO DE VENDA';
 
   // Cabeçalho da tabela de itens.
@@ -149,6 +150,27 @@ export function buildDocDefinition(input: OrcamentoInput): TDocumentDefinitions 
     columnGap: 4,
   });
 
+  // Cabeçalho: logo da marca (base64) + endereço. Se a logo não carregar, cai no
+  // nome da empresa em texto (comportamento antigo) — nunca quebra o PDF.
+  const headerBlocks: Content[] = logoDataUri
+    ? [
+        {
+          columns: [
+            { image: logoDataUri, fit: [150, 60] as [number, number], width: 170 },
+            {
+              width: '*',
+              margin: [10, 6, 0, 0] as [number, number, number, number],
+              stack: EMPRESA_LINHAS.map((l) => ({ text: l, style: 'empresaSub' } as Content)),
+            },
+          ],
+          columnGap: 6,
+        } as Content,
+      ]
+    : [
+        { text: EMPRESA_NOME[marca], style: 'empresa' } as Content,
+        ...EMPRESA_LINHAS.map((l) => ({ text: l, style: 'empresaSub' } as Content)),
+      ];
+
   return {
     pageSize: 'A4',
     pageMargins: [32, 32, 32, 48],
@@ -161,9 +183,8 @@ export function buildDocDefinition(input: OrcamentoInput): TDocumentDefinitions 
       ],
     }),
     content: [
-      // Cabeçalho empresa
-      { text: EMPRESA_NOME[marca], style: 'empresa' },
-      ...EMPRESA_LINHAS.map((l) => ({ text: l, style: 'empresaSub' } as Content)),
+      // Cabeçalho empresa (logo da marca; ou nome em texto se a logo não carregar)
+      ...headerBlocks,
       { canvas: [{ type: 'line', x1: 0, y1: 6, x2: 531, y2: 6, lineWidth: 1, lineColor: '#111111' }] },
 
       // Nº + emissão
@@ -294,9 +315,28 @@ export interface OrcamentoPdf {
   base64: string;
 }
 
+// Carrega a logo da marca (public/*.png) como data URI base64 p/ embutir no PDF.
+async function loadLogoDataUri(brand: Brand): Promise<string | null> {
+  try {
+    const url = brand === 'shadexp' ? '/logo-shadexp-tight.png' : '/logo-luxashade-tight.png';
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    return await new Promise<string | null>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function generateOrcamentoPdf(input: OrcamentoInput): Promise<OrcamentoPdf> {
   const pdfMake = await loadPdfMake();
-  const docDef = buildDocDefinition(input);
+  const logoDataUri = input.logoDataUri ?? (await loadLogoDataUri(input.marca));
+  const docDef = buildDocDefinition({ ...input, logoDataUri });
   const base64: string = await new Promise((resolve, reject) => {
     try {
       pdfMake.createPdf(docDef).getBase64((data: string) => resolve(data));
