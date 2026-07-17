@@ -24,10 +24,15 @@ export interface PriceRow {
   vlr_m2: number | null; largMaxOverride: number | null;
   colecao: string; cor: string; tipo: string;
 }
+// Trilho motorizado (BOM): 1 código (255.xx) -> lista de componentes cobrados.
+// v (valor unitário de venda) = PRECO MP × markup de cor (1,1 branco / 1,2 preto).
+export interface TrilhoComp { c: string; q: number; f: string; v: number }
+export interface TrilhoRow { codigo: string; componentes: TrilhoComp[] }
 export interface ParsedCatalog {
   sheetNames: string[];
   dims: DimRow[];
   prices: PriceRow[];
+  trilho: TrilhoRow[];
   grpLargMax: Record<string, number>;
   warnings: string[];
 }
@@ -45,6 +50,58 @@ const n = (v: any): number | null => {
   const x = Number(v);
   return Number.isFinite(x) ? x : null;
 };
+
+// ---------- trilho: fórmulas + preço (ESPELHA calculator.ts) ----------
+// Conjunto de fórmulas que o motor de cálculo do trilho entende. Se a planilha
+// trouxer uma fórmula fora desta lista, o preço não sairia certo -> vira aviso.
+const TRILHO_FORMULAS = new Set<string>([
+  '', '(AA$1*2)/1000', '(AA$1*2.4)/1000', '(AA$1*2.6)/1000', '(AA$1*3.4)/1000',
+  '(AA$1*1.8)/1000', '(AA$1+150)/1000', '(AA$1-100)/1000',
+  'ARREDONDAR.PARA.CIMA(AA$1/100)', 'ARREDONDAR.PARA.CIMA(AA$1/100)+8',
+  'ARREDONDAR.PARA.CIMA(AA$1/48)+2', 'ARREDONDAR.PARA.CIMA(AA$1/60)',
+  'ARREDONDAR.PARA.CIMA(AA$1/60)+2', 'ARREDONDAR.PARA.CIMA(AA$1/60)+8',
+  'ARREDONDAR.PARA.CIMA(AA$1/67)+2', 'ARREDONDAR.PARA.CIMA(AA$1/600)',
+  'INT(AA$1/6001)',
+]);
+// markup pela cor do código: ….01x = branco (1,1) ; ….05x = preto (1,2).
+const trilhoMarkup = (codigo: string) => ((codigo.split('.').pop() ?? '').startsWith('05') ? 1.2 : 1.1);
+const trilhoFKey = (f: string) => (f || '').replace(/\s/g, '').toUpperCase();
+// Avaliador de quantidade — igual a calcularQuantidade() do calculator.ts.
+function trilhoQtd(f: string, L: number, qb: number): number {
+  switch (f) {
+    case '(AA$1*2)/1000': return (L * 2) / 1000;
+    case '(AA$1*2.4)/1000': return (L * 2.4) / 1000;
+    case '(AA$1*2.6)/1000': return (L * 2.6) / 1000;
+    case '(AA$1*3.4)/1000': return (L * 3.4) / 1000;
+    case '(AA$1*1.8)/1000': return (L * 1.8) / 1000;
+    case '(AA$1+150)/1000': return (L + 150) / 1000;
+    case '(AA$1-100)/1000': return (L - 100) / 1000;
+    case 'ARREDONDAR.PARA.CIMA(AA$1/100)': return Math.ceil(L / 100);
+    case 'ARREDONDAR.PARA.CIMA(AA$1/100)+8': return Math.ceil(L / 100) + 8;
+    case 'ARREDONDAR.PARA.CIMA(AA$1/48)+2': return Math.ceil(L / 48) + 2;
+    case 'ARREDONDAR.PARA.CIMA(AA$1/60)': return Math.ceil(L / 60);
+    case 'ARREDONDAR.PARA.CIMA(AA$1/60)+2': return Math.ceil(L / 60) + 2;
+    case 'ARREDONDAR.PARA.CIMA(AA$1/60)+8': return Math.ceil(L / 60) + 8;
+    case 'ARREDONDAR.PARA.CIMA(AA$1/67)+2': return Math.ceil(L / 67) + 2;
+    case 'ARREDONDAR.PARA.CIMA(AA$1/600)': return Math.ceil(L / 600);
+    case 'INT(AA$1/6001)': return Math.floor(L / 6001);
+    default: return qb;
+  }
+}
+// Preço-base do trilho (antes do motor/curva) numa largura — só p/ PREVIEW do diff.
+const TRILHO_REF_W = 3000;
+const trilhoBase = (comps: TrilhoComp[], L: number) =>
+  comps.reduce((t, c) => t + c.v * (c.f ? trilhoQtd(c.f, L, c.q) : c.q), 0);
+// true se as duas listas de componentes diferem (estrutura ou valor > meio centavo).
+function trilhoChanged(cur: TrilhoComp[], next: TrilhoComp[]): boolean {
+  if (cur.length !== next.length) return true;
+  const m = new Map(cur.map((c) => [`${c.c}|${c.q}|${trilhoFKey(c.f)}`, c.v]));
+  for (const c of next) {
+    const v = m.get(`${c.c}|${c.q}|${trilhoFKey(c.f)}`);
+    if (v == null || Math.abs(v - c.v) > 0.005) return true;
+  }
+  return false;
+}
 
 // índice de cabeçalho -> coluna, tentando vários apelidos (normalizados)
 function colMap(header: any[]): (...aliases: string[]) => number {
@@ -64,6 +121,38 @@ function readSheets(data: ArrayBuffer): Sheet[] {
     name,
     rows: XLSX.utils.sheet_to_json<any[]>(wb.Sheets[name], { header: 1, blankrows: false, defval: null }),
   }));
+}
+
+// Aba do trilho (BOM): "SG1 - ATUALIZADA". Cabeçalho não está na 1ª linha, então
+// procuramos a linha que tem G1_COD + G1_COMP + PRECO MP. Só componentes SNS são
+// cobrados (SNN = incluso, R$ 0). v = PRECO MP × markup de cor.
+function parseTrilho(sheets: Sheet[], warnings: string[]): TrilhoRow[] {
+  for (const sh of sheets) {
+    let hi = -1;
+    for (let i = 0; i < Math.min(sh.rows.length, 8); i++) {
+      const keys = new Set((sh.rows[i] ?? []).map(norm));
+      if (keys.has('g1_cod') && keys.has('g1_comp') && keys.has('preco mp')) { hi = i; break; }
+    }
+    if (hi < 0) continue;
+    const get = colMap(sh.rows[hi]);
+    const cCod = get('g1_cod'), cComp = get('g1_comp'), cQ = get('g1_quant'),
+      cF = get('g1_xformul'), cPad = get('padrao'), cPreco = get('preco mp');
+    const byCode = new Map<string, TrilhoComp[]>();
+    for (const r of sh.rows.slice(hi + 1)) {
+      const codigo = s(r[cCod]); if (!codigo) continue;
+      if (s(r[cPad]).toUpperCase() !== 'SNS') continue; // SNN = não cobrado
+      const f = s(r[cF]);
+      if (!TRILHO_FORMULAS.has(f))
+        warnings.push(`Trilho ${codigo}: fórmula não reconhecida "${f}" (comp. ${s(r[cComp])}).`);
+      const comp: TrilhoComp = {
+        c: s(r[cComp]), q: n(r[cQ]) ?? 1, f,
+        v: Math.round((n(r[cPreco]) ?? 0) * trilhoMarkup(codigo) * 1e6) / 1e6,
+      };
+      (byCode.get(codigo) ?? byCode.set(codigo, []).get(codigo)!).push(comp);
+    }
+    return Array.from(byCode, ([codigo, componentes]) => ({ codigo, componentes }));
+  }
+  return [];
 }
 
 // ---------- parse ----------
@@ -110,8 +199,11 @@ export function parseWorkbook(data: ArrayBuffer): ParsedCatalog {
     }
   }
 
+  const trilho = parseTrilho(sheets, warnings);
+
   if (!dims.length) warnings.push('Aba de dimensões (GR_MIN_MAX) não encontrada.');
   if (!prices.length) warnings.push('Aba de preços (PA x Regras M²) não encontrada.');
+  if (!trilho.length) warnings.push('Aba do trilho (SG1 - ATUALIZADA) não encontrada.');
 
   // larg máx do grupo + override por tecido (tecido < grupo)
   const grpLargMax: Record<string, number> = {};
@@ -123,7 +215,7 @@ export function parseWorkbook(data: ArrayBuffer): ParsedCatalog {
     delete (p as any)._lmaxRaw;
   }
 
-  return { sheetNames: sheets.map((x) => x.name), dims, prices, grpLargMax, warnings };
+  return { sheetNames: sheets.map((x) => x.name), dims, prices, trilho, grpLargMax, warnings };
 }
 
 // ---------- estado atual do banco ----------
@@ -145,7 +237,21 @@ export interface CatalogDiff {
   dims: { total: number; changed: number; samples: string[] };
   prices: { combos: number; combosChanged: number; productsChanged: number; samples: string[]; unmatched: number };
   largMax: { combos: number; productsAffected: number; samples: string[] };
+  trilho: { total: number; changed: number; unmatched: number; samples: string[] };
   grupoNome: Record<string, string>;
+}
+
+// Componentes de trilho atuais no banco, agrupados por código.
+async function fetchTrilhoComponentes(): Promise<Map<string, TrilhoComp[]>> {
+  const { data } = await supabase
+    .from('trilho_componentes')
+    .select('trilho_codigo, comp_codigo, quantidade, formula, valor');
+  const out = new Map<string, TrilhoComp[]>();
+  for (const r of (data ?? []) as any[]) {
+    const arr = out.get(r.trilho_codigo) ?? out.set(r.trilho_codigo, []).get(r.trilho_codigo)!;
+    arr.push({ c: r.comp_codigo, q: Number(r.quantidade), f: r.formula ?? '', v: Number(r.valor) });
+  }
+  return out;
 }
 
 export async function diffAgainstDb(parsed: ParsedCatalog): Promise<CatalogDiff> {
@@ -201,10 +307,25 @@ export async function diffAgainstDb(parsed: ParsedCatalog): Promise<CatalogDiff>
     }
   }
 
+  // trilho (BOM)
+  const curTril = await fetchTrilhoComponentes();
+  const trilhoSamples: string[] = [];
+  let trilhoChangedN = 0, trilhoUnmatched = 0;
+  for (const t of parsed.trilho) {
+    const cur = curTril.get(t.codigo);
+    if (!cur) { trilhoUnmatched++; continue; }
+    if (trilhoChanged(cur, t.componentes)) {
+      trilhoChangedN++;
+      if (trilhoSamples.length < 10)
+        trilhoSamples.push(`${t.codigo}: R$${trilhoBase(cur, TRILHO_REF_W).toFixed(2)}→R$${trilhoBase(t.componentes, TRILHO_REF_W).toFixed(2)} (base ${TRILHO_REF_W / 1000}m)`);
+    }
+  }
+
   return {
     dims: { total: parsed.dims.length, changed: dimChanged, samples: dimSamples },
     prices: { combos: parsed.prices.length, combosChanged, productsChanged, samples: priceSamples, unmatched },
     largMax: { combos: largCombosChanged, productsAffected: largProducts, samples: largSamples },
+    trilho: { total: parsed.trilho.length, changed: trilhoChangedN, unmatched: trilhoUnmatched, samples: trilhoSamples },
     grupoNome,
   };
 }
@@ -216,15 +337,15 @@ async function pool<T>(items: T[], worker: (t: T) => Promise<void>, concurrency:
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, run));
 }
 
-export interface ApplyResult { dimsUpdated: number; combosUpdated: number; productsTouched: number; fails: number; failSamples: string[]; }
+export interface ApplyResult { dimsUpdated: number; combosUpdated: number; productsTouched: number; trilhosUpdated: number; fails: number; failSamples: string[]; }
 
 export async function applyImport(
   parsed: ParsedCatalog,
   grupoNome: Record<string, string>,
   onProgress?: (done: number, total: number) => void,
 ): Promise<ApplyResult> {
-  const res: ApplyResult = { dimsUpdated: 0, combosUpdated: 0, productsTouched: 0, fails: 0, failSamples: [] };
-  const total = parsed.dims.length + parsed.prices.length;
+  const res: ApplyResult = { dimsUpdated: 0, combosUpdated: 0, productsTouched: 0, trilhosUpdated: 0, fails: 0, failSamples: [] };
+  const total = parsed.dims.length + parsed.prices.length + parsed.trilho.length;
   let done = 0;
   const tick = () => { done++; onProgress?.(done, total); };
 
@@ -252,6 +373,27 @@ export async function applyImport(
     else { res.combosUpdated++; res.productsTouched += count ?? 0; }
     tick();
   }, 8);
+
+  // 3) trilho (BOM): regrava os componentes dos códigos que mudaram (delete+insert).
+  if (parsed.trilho.length) {
+    const cur = await fetchTrilhoComponentes();
+    for (const t of parsed.trilho) {
+      const before = cur.get(t.codigo);
+      if (!before || !trilhoChanged(before, t.componentes)) { tick(); continue; } // inexistente ou igual
+      const del = await supabase.from('trilho_componentes').delete().eq('trilho_codigo', t.codigo);
+      if (del.error) {
+        res.fails++; if (res.failSamples.length < 8) res.failSamples.push(`trilho ${t.codigo}: ${del.error.message}`);
+        tick(); continue;
+      }
+      const rows = t.componentes.map((c, i) => ({
+        trilho_codigo: t.codigo, comp_codigo: c.c, quantidade: c.q, formula: c.f, valor: c.v, ordem: i,
+      }));
+      const ins = await supabase.from('trilho_componentes').insert(rows);
+      if (ins.error) { res.fails++; if (res.failSamples.length < 8) res.failSamples.push(`trilho ${t.codigo}: ${ins.error.message}`); }
+      else res.trilhosUpdated++;
+      tick();
+    }
+  }
 
   return res;
 }

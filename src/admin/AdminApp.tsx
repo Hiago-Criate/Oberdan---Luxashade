@@ -1284,7 +1284,7 @@ function Importar({ toast }: { toast: (m: string) => void }) {
 
   const apply = async () => {
     if (!parsed || !diff) return;
-    setPhase('applying'); setProgress({ done: 0, total: parsed.dims.length + parsed.prices.length });
+    setPhase('applying'); setProgress({ done: 0, total: parsed.dims.length + parsed.prices.length + parsed.trilho.length });
     try {
       const r = await applyImport(parsed, diff.grupoNome, (done, total) => setProgress({ done, total }));
       setResult(r); setPhase('done'); toast('Catálogo atualizado no banco!');
@@ -1293,7 +1293,7 @@ function Importar({ toast }: { toast: (m: string) => void }) {
 
   const reset = () => { setPhase('idle'); setParsed(null); setDiff(null); setResult(null); setFileName(''); setErrMsg(''); };
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
-  const totalChanges = diff ? diff.prices.combosChanged + diff.dims.changed + diff.largMax.combos : 0;
+  const totalChanges = diff ? diff.prices.combosChanged + diff.dims.changed + diff.largMax.combos + diff.trilho.changed : 0;
 
   return (
     <div className="max-w-3xl space-y-4">
@@ -1304,8 +1304,8 @@ function Importar({ toast }: { toast: (m: string) => void }) {
             <p className="font-medium text-zinc-800">Atualize o catálogo a partir da planilha</p>
             <p className="mt-1">Suba a planilha <span className="font-medium">Modelo Dados WebApp</span> (.xlsx). O sistema lê as abas de{' '}
               <span className="font-medium">dimensões</span>, <span className="font-medium">preços m²</span> e{' '}
-              <span className="font-medium">largura máx por tecido</span>, mostra o que vai mudar e só aplica após você confirmar.
-              Reflete no app ao recarregar.</p>
+              <span className="font-medium">largura máx por tecido</span> e <span className="font-medium">trilhos motorizados</span>,
+              mostra o que vai mudar e só aplica após você confirmar. Reflete no app ao recarregar.</p>
           </div>
         </div>
       </div>
@@ -1340,10 +1340,11 @@ function Importar({ toast }: { toast: (m: string) => void }) {
               {parsed.warnings.map((w, i) => (<div key={i} className="flex items-center gap-1.5"><AlertTriangle size={13} /> {w}</div>))}
             </div>
           )}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard label="Preços m² a alterar" value={diff.prices.combosChanged} hint={`${diff.prices.productsChanged} produtos`} />
             <StatCard label="Dimensões a alterar" value={diff.dims.changed} hint={`de ${diff.dims.total} grupos`} />
             <StatCard label="Larg. máx por tecido" value={diff.largMax.combos} hint={`${diff.largMax.productsAffected} produtos`} />
+            <StatCard label="Trilhos a alterar" value={diff.trilho.changed} hint={`de ${diff.trilho.total} códigos`} />
           </div>
           {diff.prices.unmatched > 0 && (
             <div className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
@@ -1356,6 +1357,7 @@ function Importar({ toast }: { toast: (m: string) => void }) {
               {diff.prices.samples.length > 0 && <div><div className="font-medium text-zinc-600">Preços</div>{diff.prices.samples.map((x, i) => <div key={i}>{x}</div>)}</div>}
               {diff.dims.samples.length > 0 && <div><div className="font-medium text-zinc-600">Dimensões</div>{diff.dims.samples.map((x, i) => <div key={i}>{x}</div>)}</div>}
               {diff.largMax.samples.length > 0 && <div><div className="font-medium text-zinc-600">Largura máx</div>{diff.largMax.samples.map((x, i) => <div key={i}>{x}</div>)}</div>}
+              {diff.trilho.samples.length > 0 && <div><div className="font-medium text-zinc-600">Trilhos</div>{diff.trilho.samples.map((x, i) => <div key={i}>{x}</div>)}</div>}
             </div>
           </details>
           {totalChanges === 0 ? (
@@ -1382,10 +1384,11 @@ function Importar({ toast }: { toast: (m: string) => void }) {
         <div className="space-y-4">
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
             <div className="flex items-center gap-2 text-emerald-800"><CheckCircle2 size={20} /> <span className="font-semibold">Catálogo atualizado!</span></div>
-            <div className="mt-3 grid grid-cols-3 gap-3 text-sm text-emerald-900">
+            <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-emerald-900 lg:grid-cols-4">
               <div><div className="text-xl font-semibold">{result.combosUpdated}</div>combinações de preço</div>
               <div><div className="text-xl font-semibold">{result.productsTouched}</div>produtos atualizados</div>
               <div><div className="text-xl font-semibold">{result.dimsUpdated}</div>dimensões</div>
+              <div><div className="text-xl font-semibold">{result.trilhosUpdated}</div>trilhos</div>
             </div>
             {result.fails > 0 && <div className="mt-2 text-xs text-red-600">{result.fails} falhas: {result.failSamples.join(' · ')}</div>}
           </div>
