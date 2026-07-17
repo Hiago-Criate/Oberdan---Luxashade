@@ -14,6 +14,11 @@ export interface OrcamentoInput {
   cnpj: string;
   customer: { name: string; phone: string };
   vendedor?: string | null; // vendedor da revenda (quando identificada)
+  // Códigos TOTVS da revenda (quando identificada pelo CNPJ) — cabeçalho do PDF.
+  codCliente?: string | null;
+  loja?: string | null;
+  filial?: string | null;
+  codVendedor?: string | null;
   items: readonly OrderItem[]; // na ordem do carrinho
   subtotal: number; // soma dos itens (bruto)
   descontoPct: number; // % de desconto da revenda
@@ -99,15 +104,18 @@ function linhasDoItem(it: OrderItem): ItemLinhas {
     subs.push(`${it.motor}      Lado Motor: ${it.motorSide}`);
   if (it.curvaDescricao) subs.push(`Curva: ${it.curvaDescricao}${it.curvaCodigo ? ` (${it.curvaCodigo})` : ''}`);
   if (it.fixacao) subs.push(`Fixação: ${it.fixacao}`);
-  if (it.pesoMaxKg != null) subs.push(`Peso máx. da cortina: ${it.pesoMaxKg} kg`);
+  // "Peso máx. da cortina" removido do PDF (Oberdan: irrelevante) — segue só como
+  // validação interna no app.
   if (it.prazoDias) subs.push(`Prazo de produção: ${it.prazoDias} dias úteis`);
   if (it.observacao) subs.push(`OBS.: ${it.observacao}`);
-  return { desc: `TRILHO ${it.model}${it.railColor ? ` ${it.railColor}` : ''}`, um: 'UN', subs };
+  // Descrição completa de fábrica quando disponível; senão, rótulo curto.
+  const desc = it.descricao || `TRILHO ${it.model}${it.railColor ? ` ${it.railColor}` : ''}`;
+  return { desc, um: 'UN', subs };
 }
 
 // ---------- documento ----------
 export function buildDocDefinition(input: OrcamentoInput): TDocumentDefinitions {
-  const { tipo, marca, cnpj, customer, vendedor, items, subtotal, descontoPct, descontoValor, total, numero, now, logoDataUri } = input;
+  const { tipo, marca, cnpj, customer, vendedor, codCliente, loja, filial, codVendedor, items, subtotal, descontoPct, descontoValor, total, numero, now, logoDataUri } = input;
   const titulo = tipo === 'pedido' ? 'PEDIDO DE VENDA' : 'ORÇAMENTO DE VENDA';
 
   // Cabeçalho da tabela de itens.
@@ -204,10 +212,13 @@ export function buildDocDefinition(input: OrcamentoInput): TDocumentDefinitions 
             [
               {
                 stack: [
+                  ...(codCliente
+                    ? [labelVal('Cliente:', `${codCliente}      Loja: ${loja ?? '01'}      Filial: ${filial ?? '01'}`)]
+                    : []),
                   labelVal('Nome/Razão Social:', customer.name),
                   labelVal('CNPJ:', cnpj),
                   labelVal('Telefone:', customer.phone),
-                  ...(vendedor ? [labelVal('Vendedor:', vendedor)] : []),
+                  ...(vendedor ? [labelVal('Vendedor:', codVendedor ? `${codVendedor} - ${vendedor}` : vendedor)] : []),
                 ],
                 margin: [6, 5, 6, 5],
               },

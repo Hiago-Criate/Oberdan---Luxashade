@@ -88,19 +88,27 @@ function calcularValorComponente(comp: Comp, larguraMM: number) {
   return comp.v * calcularQuantidade(comp.f, larguraMM, comp.q);
 }
 
+// Código do trilho (255.{modelo}.{cor+abertura}) — regra única usada no cálculo
+// e na busca da descrição completa de fábrica.
+export function trilhoCodigo(model: string, opening: string, railColor: string): string {
+  const B = trilhoModelMap()[model] || '01';
+  const C = railColor === 'Branco'
+    ? (opening === 'Central' ? '01C' : '01L')
+    : (opening === 'Central' ? '05C' : '05L');
+  return `255.${B}.${C}`;
+}
+
+// Descrição completa de fábrica do trilho (trilho_produtos.descricao) — usada no
+// PDF (ex.: "TRILHO MOTORIZADO TRIOFLEX BRANCO ABERT. LATERAL (WAVE 3.4)").
+export function trilhoDescricao(model: string, opening: string, railColor: string): string | null {
+  const cod = trilhoCodigo(model, opening, railColor);
+  return getRemote()?.trilhoProdutos.find((x) => x.codigo === cod)?.descricao ?? null;
+}
+
 export function calculatePrice(data: any) {
   const { model, opening, railColor, width, motor, quantity } = data;
 
-  const B = trilhoModelMap()[model] || '01';
-
-  let C = '';
-  if (railColor === 'Branco') {
-    C = opening === 'Central' ? '01C' : '01L';
-  } else {
-    C = opening === 'Central' ? '05C' : '05L';
-  }
-
-  const codigo = `255.${B}.${C}`;
+  const codigo = trilhoCodigo(model, opening, railColor);
   const largura = parseInt(width);
   const qty = parseInt(quantity) || 1;
 

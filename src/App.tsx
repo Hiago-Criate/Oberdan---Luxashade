@@ -18,6 +18,7 @@ import { BrandPicker } from './components/BrandPicker';
 import { BRAND_LABEL, type Brand } from './data/brands';
 import { cn } from './utils/cn';
 import { generateOrcamentoPdf, type OrcamentoPdf } from './utils/orcamentoPdf';
+import { trilhoDescricao } from './utils/calculator';
 import { lookupRevendaByCnpj, allowedBrandsFor, type Revenda } from './data/revenda';
 import { salvarPedido, listarPedidos, excluirPedido, type PedidoSalvo } from './data/pedidos';
 import { HistoricoDrawer } from './components/HistoricoDrawer';
@@ -149,6 +150,15 @@ export default function App() {
       // Nº provisório do documento (o número oficial é atribuído depois no TOTVS).
       const numero = pedidoNumero || String(now.getTime()).slice(-6);
 
+      // Enriquece itens de trilho com a descrição completa de fábrica (aparece no
+      // PDF, no histórico e no webhook). Pedidos reabertos sem descrição também
+      // são preenchidos aqui.
+      const items = cart.map((it) =>
+        it.kind === 'trilho' && !it.descricao
+          ? { ...it, descricao: trilhoDescricao(it.model, it.opening, it.railColor) ?? undefined }
+          : it,
+      );
+
       // Gera o PDF do orçamento/pedido no modelo do TOTVS. Se falhar, segue
       // enviando os dados estruturados (não perde o pedido).
       let pdf: OrcamentoPdf | null = null;
@@ -159,7 +169,11 @@ export default function App() {
           cnpj,
           customer: userInfo,
           vendedor: revenda?.vendedor ?? null,
-          items: cart,
+          codCliente: revenda?.codigo ?? null,
+          loja: revenda?.loja ?? null,
+          filial: revenda?.filial ?? null,
+          codVendedor: revenda?.codVendedor ?? null,
+          items,
           subtotal,
           descontoPct,
           descontoValor,
@@ -182,7 +196,7 @@ export default function App() {
           numero,
           clienteNome: userInfo.name,
           clienteFone: userInfo.phone,
-          itens: cart,
+          itens: items,
           subtotal,
           descontoPct,
           descontoValor,
@@ -211,7 +225,7 @@ export default function App() {
         numeroOrcamento: numero,
         // numeroItem = posição (1-based) na ordem do pedido; é a referência usada
         // nas observações ("Item 01 → canal 3", "lado a lado com o Item 02").
-        items: cart.map((it, i) => ({ numeroItem: i + 1, ...it })),
+        items: items.map((it, i) => ({ numeroItem: i + 1, ...it })),
         subtotal,
         descontoPct,
         descontoValor,

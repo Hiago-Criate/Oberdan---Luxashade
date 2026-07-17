@@ -8,6 +8,10 @@ export interface TrilhoItem {
   brand: Brand;
   productCategory: 'Trilho';
   model: string;
+  // Descrição completa de fábrica (trilho_produtos.descricao) p/ o PDF. Ex.:
+  // "TRILHO MOTORIZADO TRIOFLEX BRANCO ABERT. LATERAL (WAVE 3.4)". Preenchida no
+  // fechamento; ausente em pedidos antigos → PDF cai no rótulo curto.
+  descricao?: string;
   environment: string;
   quantity: number;
   width: string;
