@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
 import { calculatePrice, getTrilhoModelNames } from '../../utils/calculator';
 import { getMotors } from '../../utils/motorPrices';
-import { CURVAS_TRILHO, curvaByCodigo } from '../../data/trilhoCurvas';
+import { getCurvasTrilho, curvaByCodigo } from '../../data/trilhoCurvas';
 import { motorsForTrilho, validarTrilho, LARGURA_MAX_TRILHO_MM } from '../../data/trilhoPeso';
 import { cn } from '../../utils/cn';
 import type { TrilhoItem } from '../../types/order';
@@ -254,7 +254,7 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
             className="w-full appearance-none bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5 text-sm"
           >
             <option value="">Sem curva (trilho reto)</option>
-            {CURVAS_TRILHO.map((c) => (
+            {getCurvasTrilho().map((c) => (
               <option key={c.codigo} value={c.codigo}>
                 {c.descricao} — + R$ {fmtBRL(c.valor)}
               </option>

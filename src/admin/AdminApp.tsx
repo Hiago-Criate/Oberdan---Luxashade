@@ -626,6 +626,15 @@ function Trilhos({ toast }: { toast: (m: string) => void }) {
     supabase.from('trilho_componentes').select('*').eq('trilho_codigo', sel).order('ordem').then(({ data }) => setComps(data ?? []));
   }, [sel]);
 
+  // Curvas do trilho (preço fixo por trilho) — editáveis; refletem no app + PDF.
+  const [curvas, setCurvas] = useState<any[]>([]);
+  useEffect(() => { fetchAll('trilho_curvas', { order: { col: 'ordem' } }).then(setCurvas).catch(() => {}); }, []);
+  const setCurva = async (row: any, field: string, v: any) => {
+    await updateRow('trilho_curvas', row.codigo, { [field]: v }, 'codigo');
+    setCurvas((cs) => cs.map((c) => (c.codigo === row.codigo ? { ...c, [field]: v } : c)));
+    toast('Curva atualizada');
+  };
+
   const setAtivoProd = async (row: any, v: boolean) => {
     await updateRow('trilho_produtos', row.codigo, { ativo: v }, 'codigo');
     setProdutos((ps) => ps.map((p) => (p.codigo === row.codigo ? { ...p, ativo: v } : p)));
@@ -647,7 +656,31 @@ function Trilhos({ toast }: { toast: (m: string) => void }) {
   };
 
   return (
-    <div className="grid grid-cols-[320px_1fr] gap-5">
+    <div className="space-y-5">
+      {/* Curvas do trilho — preço fixo somado por trilho, usado no app e no PDF. */}
+      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+        <div className="mb-1 flex items-center gap-2">
+          <h3 className="font-semibold text-zinc-700">Curvas do trilho</h3>
+          <span className="text-xs text-zinc-400">preço fixo somado por trilho</span>
+        </div>
+        <p className="mb-3 text-xs text-zinc-400">Aparecem no app ao configurar o trilho e no PDF. Editar aqui reflete no app ao recarregar.</p>
+        <table className="w-full text-sm">
+          <thead><tr><Th>Código</Th><Th>Descrição</Th><Th className="text-right">Valor (R$)</Th><Th className="text-center">Ativa</Th></tr></thead>
+          <tbody className="divide-y divide-zinc-100">
+            {curvas.map((c) => (
+              <tr key={c.codigo}>
+                <Td className="w-28 font-mono text-[11px] text-zinc-400">{c.codigo}</Td>
+                <Td><TxtCell value={c.descricao} onCommit={(s) => setCurva(c, 'descricao', s)} /></Td>
+                <Td className="w-28"><NumCell value={c.valor} prefix="R$" onCommit={(n) => setCurva(c, 'valor', n)} /></Td>
+                <Td className="w-16 text-center"><Toggle on={c.ativo} onChange={(v) => setCurva(c, 'ativo', v)} /></Td>
+              </tr>
+            ))}
+            {curvas.length === 0 && <tr><Td className="text-zinc-400">Nenhuma curva cadastrada.</Td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="grid grid-cols-[320px_1fr] gap-5">
       <div className="space-y-2 rounded-2xl border border-zinc-200 bg-white p-3">
         <p className="px-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">Trilhos</p>
         {produtos.map((p) => (
@@ -687,6 +720,7 @@ function Trilhos({ toast }: { toast: (m: string) => void }) {
             <p className="mt-3 flex items-center gap-2 text-xs text-zinc-400"><AlertTriangle size={13} /> A fórmula deve ser uma das reconhecidas pelo cálculo (ex: <code className="rounded bg-zinc-100 px-1">ARREDONDAR.PARA.CIMA(AA$1/100)+8</code>). Vazio = quantidade fixa.</p>
           </>
         )}
+      </div>
       </div>
     </div>
   );
@@ -1344,7 +1378,7 @@ function Importar({ toast }: { toast: (m: string) => void }) {
             <StatCard label="Preços m² a alterar" value={diff.prices.combosChanged} hint={`${diff.prices.productsChanged} produtos`} />
             <StatCard label="Dimensões a alterar" value={diff.dims.changed} hint={`de ${diff.dims.total} grupos`} />
             <StatCard label="Larg. máx por tecido" value={diff.largMax.combos} hint={`${diff.largMax.productsAffected} produtos`} />
-            <StatCard label="Trilhos a alterar" value={diff.trilho.changed} hint={`de ${diff.trilho.total} códigos`} />
+            <StatCard label="Trilhos a alterar" value={diff.trilho.changed} hint={`base ${diff.trilho.bomChanged} · curvas ${diff.trilho.curvasChanged} · mot. ${diff.trilho.motoresChanged}`} />
           </div>
           {diff.prices.unmatched > 0 && (
             <div className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
@@ -1388,7 +1422,7 @@ function Importar({ toast }: { toast: (m: string) => void }) {
               <div><div className="text-xl font-semibold">{result.combosUpdated}</div>combinações de preço</div>
               <div><div className="text-xl font-semibold">{result.productsTouched}</div>produtos atualizados</div>
               <div><div className="text-xl font-semibold">{result.dimsUpdated}</div>dimensões</div>
-              <div><div className="text-xl font-semibold">{result.trilhosUpdated}</div>trilhos</div>
+              <div><div className="text-xl font-semibold">{result.trilhosUpdated + result.curvasUpdated + result.motoresUpdated}</div>trilhos (base+curvas+mot.)</div>
             </div>
             {result.fails > 0 && <div className="mt-2 text-xs text-red-600">{result.fails} falhas: {result.failSamples.join(' · ')}</div>}
           </div>

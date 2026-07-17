@@ -28,11 +28,16 @@ export interface PriceRow {
 // v (valor unitário de venda) = PRECO MP × markup de cor (1,1 branco / 1,2 preto).
 export interface TrilhoComp { c: string; q: number; f: string; v: number }
 export interface TrilhoRow { codigo: string; componentes: TrilhoComp[] }
+// Curvas e motores do trilho (aba ACESSORIOS-TRILHOS-255): preço direto de venda.
+export interface TrilhoCurvaRow { codigo: string; valor: number }
+export interface TrilhoMotorRow { nome: string; valor: number }
 export interface ParsedCatalog {
   sheetNames: string[];
   dims: DimRow[];
   prices: PriceRow[];
   trilho: TrilhoRow[];
+  trilhoCurvas: TrilhoCurvaRow[];
+  trilhoMotores: TrilhoMotorRow[];
   grpLargMax: Record<string, number>;
   warnings: string[];
 }
@@ -155,6 +160,34 @@ function parseTrilho(sheets: Sheet[], warnings: string[]): TrilhoRow[] {
   return [];
 }
 
+// Aba ACESSORIOS-TRILHOS-255: preço de venda dos motores e das curvas do trilho.
+// Cabeçalho: Cod | Descricao PA | Comp | Componente | Preco Venda | ... | Cor PA.
+// (distinguir da MARCA_E_GRUPO, que tem 'Marca' e não tem 'Cod'/'Cor PA'.)
+const CURVA_CODES = new Set(['154.27.00', '154.28.00', '154.29.00', '154.30.00']);
+function parseTrilhoAcessorios(sheets: Sheet[]): { curvas: TrilhoCurvaRow[]; motores: TrilhoMotorRow[] } {
+  for (const sh of sheets) {
+    if (!sh.rows.length) continue;
+    const keys = new Set(sh.rows[0].map(norm));
+    if (!(keys.has('cod') && keys.has('comp') && keys.has('preco venda') && keys.has('cor pa'))) continue;
+    const get = colMap(sh.rows[0]);
+    const cComp = get('comp'), cNome = get('componente'), cPreco = get('preco venda');
+    const curvas: TrilhoCurvaRow[] = [], motores: TrilhoMotorRow[] = [];
+    const seenC = new Set<string>(), seenM = new Set<string>();
+    for (const r of sh.rows.slice(1)) {
+      const comp = s(r[cComp]); const preco = n(r[cPreco]); if (!comp || preco == null) continue;
+      if (CURVA_CODES.has(comp)) {
+        if (!seenC.has(comp)) { seenC.add(comp); curvas.push({ codigo: comp, valor: preco }); }
+      } else {
+        const nome = s(r[cNome]);
+        // só motores "de verdade" (exclui SEM MOTOR informativo, preço-placebo 0,01)
+        if (/^MOTOR /i.test(nome) && !seenM.has(nome)) { seenM.add(nome); motores.push({ nome, valor: preco }); }
+      }
+    }
+    return { curvas, motores };
+  }
+  return { curvas: [], motores: [] };
+}
+
 // ---------- parse ----------
 export function parseWorkbook(data: ArrayBuffer): ParsedCatalog {
   const sheets = readSheets(data);
@@ -200,6 +233,7 @@ export function parseWorkbook(data: ArrayBuffer): ParsedCatalog {
   }
 
   const trilho = parseTrilho(sheets, warnings);
+  const { curvas: trilhoCurvas, motores: trilhoMotores } = parseTrilhoAcessorios(sheets);
 
   if (!dims.length) warnings.push('Aba de dimensões (GR_MIN_MAX) não encontrada.');
   if (!prices.length) warnings.push('Aba de preços (PA x Regras M²) não encontrada.');
@@ -215,7 +249,7 @@ export function parseWorkbook(data: ArrayBuffer): ParsedCatalog {
     delete (p as any)._lmaxRaw;
   }
 
-  return { sheetNames: sheets.map((x) => x.name), dims, prices, trilho, grpLargMax, warnings };
+  return { sheetNames: sheets.map((x) => x.name), dims, prices, trilho, trilhoCurvas, trilhoMotores, grpLargMax, warnings };
 }
 
 // ---------- estado atual do banco ----------
@@ -237,7 +271,7 @@ export interface CatalogDiff {
   dims: { total: number; changed: number; samples: string[] };
   prices: { combos: number; combosChanged: number; productsChanged: number; samples: string[]; unmatched: number };
   largMax: { combos: number; productsAffected: number; samples: string[] };
-  trilho: { total: number; changed: number; unmatched: number; samples: string[] };
+  trilho: { bomTotal: number; bomChanged: number; curvasChanged: number; motoresChanged: number; changed: number; unmatched: number; samples: string[] };
   grupoNome: Record<string, string>;
 }
 
@@ -310,14 +344,41 @@ export async function diffAgainstDb(parsed: ParsedCatalog): Promise<CatalogDiff>
   // trilho (BOM)
   const curTril = await fetchTrilhoComponentes();
   const trilhoSamples: string[] = [];
-  let trilhoChangedN = 0, trilhoUnmatched = 0;
+  let bomChanged = 0, trilhoUnmatched = 0;
   for (const t of parsed.trilho) {
     const cur = curTril.get(t.codigo);
     if (!cur) { trilhoUnmatched++; continue; }
     if (trilhoChanged(cur, t.componentes)) {
-      trilhoChangedN++;
-      if (trilhoSamples.length < 10)
+      bomChanged++;
+      if (trilhoSamples.length < 12)
         trilhoSamples.push(`${t.codigo}: R$${trilhoBase(cur, TRILHO_REF_W).toFixed(2)}→R$${trilhoBase(t.componentes, TRILHO_REF_W).toFixed(2)} (base ${TRILHO_REF_W / 1000}m)`);
+    }
+  }
+  // curvas do trilho (valor direto, casa por código)
+  let curvasChanged = 0;
+  if (parsed.trilhoCurvas.length) {
+    const { data } = await supabase.from('trilho_curvas').select('codigo, valor');
+    const cur = new Map((data ?? []).map((r: any) => [r.codigo, Number(r.valor)]));
+    for (const c of parsed.trilhoCurvas) {
+      const v = cur.get(c.codigo);
+      if (v == null || Math.abs(v - c.valor) > 0.005) {
+        curvasChanged++;
+        if (trilhoSamples.length < 16) trilhoSamples.push(`curva ${c.codigo}: R$${(v ?? 0).toFixed(2)}→R$${c.valor.toFixed(2)}`);
+      }
+    }
+  }
+  // motores do trilho (casa por NOME; só os marcados uso_trilho no banco)
+  let motoresChanged = 0;
+  if (parsed.trilhoMotores.length) {
+    const { data } = await supabase.from('motores').select('nome, preco_branco, preco_preto, uso_trilho');
+    const cur = new Map((data ?? []).filter((m: any) => m.uso_trilho).map((m: any) => [m.nome as string, m]));
+    for (const mo of parsed.trilhoMotores) {
+      const db: any = cur.get(mo.nome);
+      if (!db) continue; // motor da planilha não está como trilho no banco -> ignora
+      if (Math.abs(Number(db.preco_branco) - mo.valor) > 0.005 || Math.abs(Number(db.preco_preto) - mo.valor) > 0.005) {
+        motoresChanged++;
+        if (trilhoSamples.length < 16) trilhoSamples.push(`motor ${mo.nome}: R$${Number(db.preco_branco).toFixed(2)}→R$${mo.valor.toFixed(2)}`);
+      }
     }
   }
 
@@ -325,7 +386,10 @@ export async function diffAgainstDb(parsed: ParsedCatalog): Promise<CatalogDiff>
     dims: { total: parsed.dims.length, changed: dimChanged, samples: dimSamples },
     prices: { combos: parsed.prices.length, combosChanged, productsChanged, samples: priceSamples, unmatched },
     largMax: { combos: largCombosChanged, productsAffected: largProducts, samples: largSamples },
-    trilho: { total: parsed.trilho.length, changed: trilhoChangedN, unmatched: trilhoUnmatched, samples: trilhoSamples },
+    trilho: {
+      bomTotal: parsed.trilho.length, bomChanged, curvasChanged, motoresChanged,
+      changed: bomChanged + curvasChanged + motoresChanged, unmatched: trilhoUnmatched, samples: trilhoSamples,
+    },
     grupoNome,
   };
 }
@@ -337,15 +401,15 @@ async function pool<T>(items: T[], worker: (t: T) => Promise<void>, concurrency:
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, run));
 }
 
-export interface ApplyResult { dimsUpdated: number; combosUpdated: number; productsTouched: number; trilhosUpdated: number; fails: number; failSamples: string[]; }
+export interface ApplyResult { dimsUpdated: number; combosUpdated: number; productsTouched: number; trilhosUpdated: number; curvasUpdated: number; motoresUpdated: number; fails: number; failSamples: string[]; }
 
 export async function applyImport(
   parsed: ParsedCatalog,
   grupoNome: Record<string, string>,
   onProgress?: (done: number, total: number) => void,
 ): Promise<ApplyResult> {
-  const res: ApplyResult = { dimsUpdated: 0, combosUpdated: 0, productsTouched: 0, trilhosUpdated: 0, fails: 0, failSamples: [] };
-  const total = parsed.dims.length + parsed.prices.length + parsed.trilho.length;
+  const res: ApplyResult = { dimsUpdated: 0, combosUpdated: 0, productsTouched: 0, trilhosUpdated: 0, curvasUpdated: 0, motoresUpdated: 0, fails: 0, failSamples: [] };
+  const total = parsed.dims.length + parsed.prices.length + parsed.trilho.length + parsed.trilhoCurvas.length + parsed.trilhoMotores.length;
   let done = 0;
   const tick = () => { done++; onProgress?.(done, total); };
 
@@ -391,6 +455,34 @@ export async function applyImport(
       const ins = await supabase.from('trilho_componentes').insert(rows);
       if (ins.error) { res.fails++; if (res.failSamples.length < 8) res.failSamples.push(`trilho ${t.codigo}: ${ins.error.message}`); }
       else res.trilhosUpdated++;
+      tick();
+    }
+  }
+
+  // 4) curvas do trilho: atualiza o valor dos códigos que mudaram.
+  if (parsed.trilhoCurvas.length) {
+    const { data } = await supabase.from('trilho_curvas').select('codigo, valor');
+    const cur = new Map((data ?? []).map((r: any) => [r.codigo, Number(r.valor)]));
+    for (const c of parsed.trilhoCurvas) {
+      const v = cur.get(c.codigo);
+      if (v == null || Math.abs(v - c.valor) <= 0.005) { tick(); continue; }
+      const { error } = await supabase.from('trilho_curvas').update({ valor: c.valor }).eq('codigo', c.codigo);
+      if (error) { res.fails++; if (res.failSamples.length < 8) res.failSamples.push(`curva ${c.codigo}: ${error.message}`); }
+      else res.curvasUpdated++;
+      tick();
+    }
+  }
+
+  // 5) motores do trilho: atualiza branco+preto por NOME (só uso_trilho) que mudaram.
+  if (parsed.trilhoMotores.length) {
+    const { data } = await supabase.from('motores').select('nome, preco_branco, preco_preto, uso_trilho');
+    const cur = new Map((data ?? []).filter((m: any) => m.uso_trilho).map((m: any) => [m.nome as string, m]));
+    for (const mo of parsed.trilhoMotores) {
+      const db: any = cur.get(mo.nome);
+      if (!db || (Math.abs(Number(db.preco_branco) - mo.valor) <= 0.005 && Math.abs(Number(db.preco_preto) - mo.valor) <= 0.005)) { tick(); continue; }
+      const { error } = await supabase.from('motores').update({ preco_branco: mo.valor, preco_preto: mo.valor }).eq('nome', mo.nome);
+      if (error) { res.fails++; if (res.failSamples.length < 8) res.failSamples.push(`motor ${mo.nome}: ${error.message}`); }
+      else res.motoresUpdated++;
       tick();
     }
   }

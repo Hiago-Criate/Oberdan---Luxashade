@@ -59,6 +59,7 @@ export interface RemoteCatalog {
   motores: { nome: string; branco: number; preto: number; uso_trilho: boolean; uso_shade: boolean; informativo: boolean; familias: string[]; modelos: string[] }[];
   trilhoModelos: { codigo: string; nome: string }[];
   trilhoProdutos: { codigo: string; modelo_codigo: string; descricao: string; cor: string; abertura: string; componentes: { c: string; q: number; f: string; v: number }[] }[];
+  trilhoCurvas: { codigo: string; descricao: string; valor: number }[];
   opcionaisPorModelo: Record<string, RemoteOpcional[]>;
   opcionaisControle: RemoteOpcional[];
   emissores: RemoteEmissor[];
@@ -192,6 +193,7 @@ export async function hydrateCatalog(): Promise<'remote' | 'static'> {
       motores: j.motores ?? [],
       trilhoModelos: j.trilho_modelos ?? [],
       trilhoProdutos: j.trilho_produtos ?? [],
+      trilhoCurvas: j.trilho_curvas ?? [],
       opcionaisPorModelo: j.opcionais_por_modelo ?? {},
       opcionaisControle: j.opcionais_controle ?? [],
       emissores: j.emissores ?? [],
