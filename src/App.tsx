@@ -30,7 +30,7 @@ const fmtPct = (n: number) => `${(n || 0).toLocaleString('pt-BR')}%`;
 type Step = 'landing' | 'brand' | 'cnpj' | 'order' | 'cart' | 'final' | 'success';
 type TipoEnvio = 'orcamento' | 'pedido';
 
-const WEBHOOK_URL = 'https://147hook.criate.online/webhook/94e9c23d-4b00-40aa-8e20-8e4da2c94907';
+const WEBHOOK_URL = 'https://212hook.criate.online/webhook/94e9c23d-4b00-40aa-8e20-8e4da2c94907';
 
 export default function App() {
   const [step, setStep] = useState<Step>('landing');
