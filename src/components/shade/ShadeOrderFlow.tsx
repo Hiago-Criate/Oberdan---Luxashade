@@ -144,21 +144,24 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
     () => modelosFor(familia, draft.acionamento),
     [familia, draft.acionamento],
   );
+  // Largura já digitada: filtra as listas de tecido pelo que é fabricável nela.
+  const widthMm = Number(draft.widthStr) || 0;
+
   const tipoOpts = useMemo(
     () => tiposFor(familia, draft.acionamento, draft.modelo),
     [familia, draft.acionamento, draft.modelo],
   );
   const colecaoOpts = useMemo(
-    () => colecoesFor(draft.modelo, draft.tipoTecido),
-    [draft.modelo, draft.tipoTecido],
+    () => colecoesFor(draft.modelo, draft.tipoTecido, widthMm),
+    [draft.modelo, draft.tipoTecido, widthMm],
   );
   const corTecidoOpts = useMemo(
-    () => coresTecidoFor(draft.modelo, draft.colecao),
-    [draft.modelo, draft.colecao],
+    () => coresTecidoFor(draft.modelo, draft.colecao, widthMm),
+    [draft.modelo, draft.colecao, widthMm],
   );
   const corAcabOpts = useMemo(
-    () => coresAcabamentoFor(draft.modelo, draft.colecao, draft.corTecido),
-    [draft.modelo, draft.colecao, draft.corTecido],
+    () => coresAcabamentoFor(draft.modelo, draft.colecao, draft.corTecido, widthMm),
+    [draft.modelo, draft.colecao, draft.corTecido, widthMm],
   );
 
   // Auto-seleção / reset quando dependências mudam.
@@ -205,7 +208,6 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
   }, [corAcabOpts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cálculo do preço.
-  const widthMm = Number(draft.widthStr) || 0;
   const heightMm = Number(draft.heightStr) || 0;
   const comandoAlturaMm = Number(draft.comandoAlturaStr) || 0;
   const isMotorized = !!(draft.acionamento && draft.acionamento !== 'MANUAL');
@@ -263,14 +265,16 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
   const ladoValue = ladoFixo ? 'Dir./Esq.' : draft.lado;
   const ladoReady = ladoFixo || !!draft.lado;
 
-  // Altura do comando — só MANUAL.
-  const alturaComandoReady = !isManual || comandoAlturaMm > 0;
-  // Comando por chips (lista fixa de alturas) em vez de texto livre:
-  //  • ShadeXP: sempre;
-  //  • Luxashade: famílias com corrente contínua (ROMAN/DUAL/SOFT/CELULAR SHADE).
-  const comandoCorrenteContinua = !isSxp && usaCorrenteContinua(familia);
-  const comandoComChips = isSxp || comandoCorrenteContinua;
+  // Altura do comando — só MANUAL. Depende do TIPO de corrente da família:
+  //  • corrente contínua (mecanismo de fábrica) → chips com as alturas padrão;
+  //  • corrente avulsa, cortada na medida (ROLLER SHADE / ROLO) → altura livre.
+  const comandoComChips = usaCorrenteContinua(familia, isSxp);
   const alturasComando = isSxp ? getSxpAlturasComando() : getLuxaAlturasComando();
+  // Com chips, só vale uma das alturas de fábrica (protege de valor herdado de
+  // outro produto ao trocar de família no meio do pedido).
+  const alturaComandoReady =
+    !isManual ||
+    (comandoComChips ? alturasComando.includes(comandoAlturaMm) : comandoAlturaMm > 0);
 
   // Módulos assimétricos — só produtos DUPLA.
   const modEsqMm = Number(draft.modLargEsqStr) || 0;
@@ -448,7 +452,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
         </StepShell>
       )}
 
-      {/* 4. Ambiente + Dimensões + Quantidade */}
+      {/* 4. Ambiente + Dimensões */}
       {draft.modelo && limits && (
         <>
           <StepShell label="Ambiente">
@@ -543,7 +547,99 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
               </p>
             </div>
           )}
+        </>
+      )}
 
+      {/* 5. Tecido — logo abaixo das dimensões: a revenda vê de cara o que existe */}
+      {draft.modelo && limits && dimsReady && (
+        <StepShell label="Tipo de Tecido">
+          <ChipsField
+            value={draft.tipoTecido}
+            options={sortTipos(tipoOpts)}
+            cols={tipoOpts.length <= 2 ? 2 : tipoOpts.length === 3 ? 3 : 4}
+            onChange={(v) =>
+              setDraft((d) => ({
+                ...d,
+                tipoTecido: v,
+                colecao: '',
+                corTecido: '',
+                corAcabamento: '',
+              }))
+            }
+            renderLabel={(t) => (isSxp && t === 'Outros' ? 'TELA SOLAR' : t.toUpperCase())}
+          />
+        </StepShell>
+      )}
+
+      {/* 6. Coleção */}
+      {draft.tipoTecido && (
+        <StepShell label="Coleção">
+          <ComboBox
+            value={draft.colecao}
+            options={colecaoOpts}
+            placeholder="Escolha a coleção"
+            onChange={(v) =>
+              setDraft((d) => ({ ...d, colecao: v, corTecido: '', corAcabamento: '' }))
+            }
+          />
+          {colecaoSobConsulta && (
+            <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+              <span className="text-sm">⚠️</span>
+              <p className="text-[11px] leading-snug text-amber-700">
+                <span className="font-semibold">Sob Consulta</span> — esta coleção está com estoque
+                baixo. Confirme a disponibilidade antes de fechar o pedido.
+              </p>
+            </div>
+          )}
+        </StepShell>
+      )}
+
+      {/* 7. Cor do Tecido */}
+      {draft.colecao && (
+        <StepShell label="Cor do Tecido">
+          <ComboBox
+            value={draft.corTecido}
+            options={corTecidoOpts}
+            placeholder="Escolha a cor do tecido"
+            onChange={(v) => setDraft((d) => ({ ...d, corTecido: v, corAcabamento: '' }))}
+          />
+          {corSobConsulta && (
+            <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+              <span className="text-sm">⚠️</span>
+              <p className="text-[11px] leading-snug text-amber-700">
+                <span className="font-semibold">Sob Consulta</span> — esta cor está com estoque
+                baixo. Confirme a disponibilidade antes de fechar o pedido.
+              </p>
+            </div>
+          )}
+          {larguraExcedeTecido && (
+            <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+              <p className="text-[11px] leading-snug text-red-600">
+                A largura de <span className="font-semibold">{fmtNum(widthMm, 0)} mm</span> excede o
+                máximo deste tecido (<span className="font-semibold">{fmtNum(tecidoLargMax!, 0)} mm</span>).
+                Reduza a largura ou escolha outro tecido.
+              </p>
+            </div>
+          )}
+        </StepShell>
+      )}
+
+      {/* 8. Cor do Acabamento */}
+      {draft.corTecido && (
+        <StepShell label="Cor do Acabamento">
+          <ChipsField
+            value={draft.corAcabamento}
+            options={corAcabOpts}
+            cols={Math.min(4, Math.max(2, corAcabOpts.length)) as 2 | 3 | 4}
+            onChange={(v) => setDraft((d) => ({ ...d, corAcabamento: v }))}
+            renderLabel={(c) => COR_ACAB_NOMES[c] || c}
+          />
+        </StepShell>
+      )}
+
+      {/* 9. Lado, altura do comando, módulos e quantidade */}
+      {draft.modelo && limits && (
+        <>
           {/* Lado (Comando se MANUAL, Motor se motorizada) — sempre, com dimensões OK */}
           {dimsReady && (
             <StepShell
@@ -570,11 +666,9 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
             <StepShell
               label="Altura do Comando (mm)"
               hint={
-                comandoCorrenteContinua
-                  ? 'Acionamento por corrente contínua. A revenda deve informar a altura do comando.'
-                  : comandoComChips
-                  ? 'Alturas padrão: 500, 1.000, 1.200, 1.500, 1.800, 2.000, 2.500 ou 3.000 mm.'
-                  : 'Em milímetros.'
+                comandoComChips
+                  ? 'Acionamento por corrente contínua — fabricada só nestas alturas. Informe a altura do comando.'
+                  : 'Em milímetros. A corrente é cortada na medida informada.'
               }
             >
               {comandoComChips ? (
@@ -721,94 +815,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
         </>
       )}
 
-      {/* 5. Tipo de Tecido — só aparece quando dimensões, lado, comando e módulos estão prontos */}
-      {draft.modelo && limits && lateraisReady && (
-        <StepShell label="Tipo de Tecido">
-          <ChipsField
-            value={draft.tipoTecido}
-            options={sortTipos(tipoOpts)}
-            cols={tipoOpts.length <= 2 ? 2 : tipoOpts.length === 3 ? 3 : 4}
-            onChange={(v) =>
-              setDraft((d) => ({
-                ...d,
-                tipoTecido: v,
-                colecao: '',
-                corTecido: '',
-                corAcabamento: '',
-              }))
-            }
-            renderLabel={(t) => (isSxp && t === 'Outros' ? 'TELA SOLAR' : t.toUpperCase())}
-          />
-        </StepShell>
-      )}
-
-      {/* 6. Coleção */}
-      {draft.tipoTecido && (
-        <StepShell label="Coleção">
-          <ComboBox
-            value={draft.colecao}
-            options={colecaoOpts}
-            placeholder="Escolha a coleção"
-            onChange={(v) =>
-              setDraft((d) => ({ ...d, colecao: v, corTecido: '', corAcabamento: '' }))
-            }
-          />
-          {colecaoSobConsulta && (
-            <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-              <span className="text-sm">⚠️</span>
-              <p className="text-[11px] leading-snug text-amber-700">
-                <span className="font-semibold">Sob Consulta</span> — esta coleção está com estoque
-                baixo. Confirme a disponibilidade antes de fechar o pedido.
-              </p>
-            </div>
-          )}
-        </StepShell>
-      )}
-
-      {/* 7. Cor do Tecido */}
-      {draft.colecao && (
-        <StepShell label="Cor do Tecido">
-          <ComboBox
-            value={draft.corTecido}
-            options={corTecidoOpts}
-            placeholder="Escolha a cor do tecido"
-            onChange={(v) => setDraft((d) => ({ ...d, corTecido: v, corAcabamento: '' }))}
-          />
-          {corSobConsulta && (
-            <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-              <span className="text-sm">⚠️</span>
-              <p className="text-[11px] leading-snug text-amber-700">
-                <span className="font-semibold">Sob Consulta</span> — esta cor está com estoque
-                baixo. Confirme a disponibilidade antes de fechar o pedido.
-              </p>
-            </div>
-          )}
-          {larguraExcedeTecido && (
-            <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
-              <p className="text-[11px] leading-snug text-red-600">
-                A largura de <span className="font-semibold">{fmtNum(widthMm, 0)} mm</span> excede o
-                máximo deste tecido (<span className="font-semibold">{fmtNum(tecidoLargMax!, 0)} mm</span>).
-                Reduza a largura ou escolha outro tecido.
-              </p>
-            </div>
-          )}
-        </StepShell>
-      )}
-
-      {/* 8. Cor do Acabamento */}
-      {draft.corTecido && (
-        <StepShell label="Cor do Acabamento">
-          <ChipsField
-            value={draft.corAcabamento}
-            options={corAcabOpts}
-            cols={Math.min(4, Math.max(2, corAcabOpts.length)) as 2 | 3 | 4}
-            onChange={(v) => setDraft((d) => ({ ...d, corAcabamento: v }))}
-            renderLabel={(c) => COR_ACAB_NOMES[c] || c}
-          />
-        </StepShell>
-      )}
-
-      {/* 9. Motor (somente se Motorizada / Motor Bateria) */}
+      {/* 10. Motor (somente se Motorizada / Motor Bateria) */}
       {draft.corAcabamento && isMotorized && (
         <StepShell label="Motor">
           <SelectField
@@ -820,7 +827,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
         </StepShell>
       )}
 
-      {/* 10. Opcionais (ShadeXP) — só aparece depois de Acabamento e do Motor (quando motorizada) */}
+      {/* 11. Opcionais — só aparece depois de Acabamento e do Motor (quando motorizada) */}
       {draft.corAcabamento && (!isMotorized || draft.motor) && opcionaisAplicaveis.length > 0 && (
         <StepShell
           label="Opcionais (acessórios)"
@@ -837,7 +844,7 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
         </StepShell>
       )}
 
-      {/* 11. Observação (OBS) — campo livre, no final do item */}
+      {/* 12. Observação (OBS) — campo livre, no final do item */}
       {draft.modelo && limits && lateraisReady && (
         <StepShell label="Observação" hint="(Opcional) Notas sobre este item para a produção.">
           <textarea

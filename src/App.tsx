@@ -11,6 +11,10 @@ import {
   User,
   Phone,
   Clock,
+  AlertTriangle,
+  Lock,
+  Users,
+  LogOut,
 } from 'lucide-react';
 import axios from 'axios';
 import { OrderFlow } from './components/OrderFlow';
@@ -23,11 +27,16 @@ import { lookupRevendaByCnpj, allowedBrandsFor, type Revenda } from './data/reve
 import { salvarPedido, listarPedidos, excluirPedido, type PedidoSalvo } from './data/pedidos';
 import { HistoricoDrawer } from './components/HistoricoDrawer';
 import { modulosDuplaLabel, type OrderItem } from './types/order';
+import { maskPhoneBR, parsePhoneBR, envioLegivel } from './utils/phone';
+import { UsuariosModal } from './components/UsuariosModal';
+import {
+  revendaExigeLogin, loginRevenda, logoutRevenda, type Sessao,
+} from './data/sessao';
 
 const fmtBRL = (n: number) => (n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
 const fmtPct = (n: number) => `${(n || 0).toLocaleString('pt-BR')}%`;
 
-type Step = 'landing' | 'brand' | 'cnpj' | 'order' | 'cart' | 'final' | 'success';
+type Step = 'landing' | 'cnpj' | 'login' | 'brand' | 'order' | 'cart' | 'final' | 'success';
 type TipoEnvio = 'orcamento' | 'pedido';
 
 const WEBHOOK_URL = 'https://212hook.criate.online/webhook/94e9c23d-4b00-40aa-8e20-8e4da2c94907';
@@ -40,6 +49,17 @@ export default function App() {
   const [allowedBrands, setAllowedBrands] = useState<Brand[]>(['luxashade', 'shadexp']);
   const [cnpjErro, setCnpjErro] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
+  // Login do usuário DENTRO da revenda (admin da revenda ou vendedor).
+  // `sessao === null` = revenda que ainda não usa login: segue como antes, com
+  // as permissões completas.
+  const [sessao, setSessao] = useState<Sessao | null>(null);
+  const [loginUser, setLoginUser] = useState('');
+  const [loginSenha, setLoginSenha] = useState('');
+  const [loginErro, setLoginErro] = useState('');
+  const [entrando, setEntrando] = useState(false);
+  const [usuariosAberto, setUsuariosAberto] = useState(false);
+  // true só quando o banco confirmou que a revenda ainda não usa login.
+  const [modoLegado, setModoLegado] = useState(false);
   // Histórico de pedidos do CNPJ (persistido no Supabase via RPCs).
   const [pedidoId, setPedidoId] = useState<string | null>(null);
   const [pedidoNumero, setPedidoNumero] = useState<string | null>(null);
@@ -57,6 +77,18 @@ export default function App() {
   const descontoPct = revenda?.desconto ?? 0;
   const descontoValor = subtotal * (descontoPct / 100);
   const total = subtotal - descontoValor;
+  // Telefone normalizado p/ o envio (55 + DDD + nº, com ou sem o 9 conforme o DDD).
+  const fonePreview = parsePhoneBR(userInfo.phone);
+
+  // Só o ADMIN da revenda gera pedido de fábrica. Vendedor faz só orçamento.
+  //
+  // `modoLegado` só fica true quando o banco CONFIRMOU que esta revenda ainda
+  // não tem login. Ausência de sessão não é permissão: sem uma resposta clara,
+  // ninguém gera pedido. (Antes era `!sessao`, e bastava derrubar uma chamada
+  // para entrar sem login já valendo como admin.)
+  const ehAdmin = sessao ? sessao.usuario.papel === 'admin' : modoLegado;
+  const podeGerarPedido = ehAdmin;
+  const token = sessao?.token ?? null;
 
   // Identifica a revenda pelo CNPJ e libera as marcas conforme o `acesso`.
   // 'not_found' → bloqueia (CNPJ sem acesso). 'error' (banco off) → libera as
@@ -64,6 +96,13 @@ export default function App() {
   const identificarECont = async () => {
     setLookingUp(true);
     setCnpjErro('');
+    // Trocar de CNPJ derruba quem estava logado. Sem isto, a sessão da revenda
+    // A continuaria valendo dentro da revenda B (dá para chegar aqui pelo
+    // "Trocar CNPJ" da tela de login e pelo "Voltar" da escolha de marca).
+    if (sessao) await logoutRevenda(sessao.token);
+    setSessao(null); setModoLegado(false);
+    setHistorico([]); setCart([]);
+    setPedidoId(null); setPedidoNumero(null);
     const res = await lookupRevendaByCnpj(cnpj);
     setLookingUp(false);
     if (res.status === 'not_found') {
@@ -75,15 +114,55 @@ export default function App() {
     if (r) {
       setUserInfo((u) => ({
         name: u.name || r.nome || '',
-        phone: u.phone || r.telefone || '',
+        phone: u.phone || maskPhoneBR(r.telefone ?? ''),
       }));
     }
     const allowed = r ? allowedBrandsFor(r.acesso) : (['luxashade', 'shadexp'] as Brand[]);
     setAllowedBrands(allowed);
     if (allowed.length === 1) setBrand(allowed[0]);
+
+    // A revenda já tem usuários? Então pede login. Se ainda não tem, entra
+    // direto (é assim que o recurso é ligado revenda por revenda).
+    const exige = await revendaExigeLogin(cnpj);
+    if (exige === 'erro') {
+      // Não conseguimos perguntar ao banco. Não dá para "entrar direto": seria
+      // exatamente o jeito de pular o login.
+      setCnpjErro('Não conseguimos verificar o acesso agora. Confira a internet e tente de novo.');
+      return;
+    }
+    if (exige === 'sim') {
+      setLoginUser(''); setLoginSenha(''); setLoginErro('');
+      setStep('login');
+      return;
+    }
+    setModoLegado(true);
     // Carrega o histórico deste CNPJ em segundo plano (não trava a navegação).
     listarPedidos(cnpj).then(setHistorico);
     setStep('brand');
+  };
+
+  // Entra com o usuário da revenda (admin da revenda ou vendedor).
+  const entrarComUsuario = async () => {
+    setEntrando(true); setLoginErro('');
+    const r = await loginRevenda(cnpj, loginUser, loginSenha);
+    setEntrando(false);
+    if (!r.ok || !r.sessao) { setLoginErro(r.erro || 'Usuário ou senha inválidos.'); return; }
+    const nova = r.sessao;
+    setSessao(nova);
+    setModoLegado(false);
+    setLoginSenha('');
+    listarPedidos(cnpj, nova.token).then(setHistorico);
+    setStep('brand');
+  };
+
+  // Sai do usuário e volta pro começo (o CNPJ é digitado de novo).
+  const sairDaConta = async () => {
+    if (sessao) await logoutRevenda(sessao.token);
+    setSessao(null); setModoLegado(false); setHistorico([]); setCart([]); setRevenda(null);
+    setPedidoId(null); setPedidoNumero(null);
+    setCnpj(''); setLoginUser(''); setLoginSenha('');
+    setUserInfo({ name: '', phone: '' });
+    setStep('landing');
   };
 
   const upsertItem = (item: OrderItem) => {
@@ -113,7 +192,7 @@ export default function App() {
   const abrirHistorico = async () => {
     setHistAberto(true);
     setHistLoading(true);
-    setHistorico(await listarPedidos(cnpj));
+    setHistorico(await listarPedidos(cnpj, token));
     setHistLoading(false);
   };
 
@@ -127,7 +206,7 @@ export default function App() {
     setCart(p.itens);
     setBrand(p.marca);
     // clienteFone não vem no histórico (dado sensível) → preserva o atual.
-    setUserInfo((u) => ({ name: p.clienteNome || u.name, phone: p.clienteFone || u.phone }));
+    setUserInfo((u) => ({ name: p.clienteNome || u.name, phone: maskPhoneBR(p.clienteFone ?? '') || u.phone }));
     // Usa a revenda ATUAL do CNPJ (desconto vigente); snapshot só como fallback.
     setRevenda(revenda ?? p.revenda);
     setPedidoId(p.id);
@@ -139,11 +218,18 @@ export default function App() {
   };
 
   const removerPedido = async (id: string) => {
-    const ok = await excluirPedido(id, cnpj);
+    const ok = await excluirPedido(id, cnpj, token);
     if (ok) setHistorico((prev) => prev.filter((p) => p.id !== id));
   };
 
   const handleFinalize = async () => {
+    // O WhatsApp recebe o número cru, já no formato do DDD. Trava de segurança:
+    // o botão já exige telefone válido, mas nunca enviar um número malformado.
+    const fone = parsePhoneBR(userInfo.phone);
+    if (!fone.ok) {
+      alert('Confira o telefone antes de enviar.');
+      return;
+    }
     setLoading(true);
     try {
       const now = new Date();
@@ -185,30 +271,39 @@ export default function App() {
         console.error('PDF generation failed:', e);
       }
 
-      // Salva/atualiza no histórico do CNPJ (best-effort; reserva o pedido mesmo
-      // que o envio ao webhook falhe).
-      try {
-        const savedId = await salvarPedido({
-          id: pedidoId,
-          cnpj,
-          marca: brand,
-          tipo: tipoEnvio,
-          numero,
-          clienteNome: userInfo.name,
-          clienteFone: userInfo.phone,
-          itens: items,
-          subtotal,
-          descontoPct,
-          descontoValor,
-          total,
-          revenda,
-        });
-        if (savedId) {
-          setPedidoId(savedId);
-          setPedidoNumero(numero);
+      // REGISTRA ANTES DE ENVIAR, e só envia se o banco aceitar.
+      // O banco é quem decide se esta pessoa pode gerar PEDIDO de fábrica. Antes
+      // a recusa virava um `null` silencioso e o WhatsApp saía assim mesmo, com
+      // a tela dizendo "Pedido Enviado!": a trava era só enfeite.
+      const salvo = await salvarPedido({
+        id: pedidoId,
+        cnpj,
+        marca: brand,
+        tipo: tipoEnvio,
+        numero,
+        clienteNome: userInfo.name,
+        clienteFone: userInfo.phone,
+        itens: items,
+        subtotal,
+        descontoPct,
+        descontoValor,
+        total,
+        revenda,
+      }, token);
+
+      if (!salvo.ok) {
+        alert(salvo.erro || 'Não conseguimos registrar agora. Tente de novo.');
+        if (salvo.sessaoMorta) {
+          setSessao(null); setModoLegado(false);
+          setLoginUser(''); setLoginSenha('');
+          setLoginErro('Sua sessão expirou. Entre de novo para continuar.');
+          setStep('login');
         }
-      } catch (e) {
-        console.error('Falha ao salvar no histórico:', e);
+        return;   // nada de WhatsApp para o cliente nem para a fábrica
+      }
+      if (salvo.id) {
+        setPedidoId(salvo.id);
+        setPedidoNumero(numero);
       }
 
       await axios.post(WEBHOOK_URL, {
@@ -218,7 +313,9 @@ export default function App() {
         tipo: tipoEnvio,
         marca: brand,
         cnpj,
-        customer: userInfo,
+        // phone vai no formato que o envio exige (55 + DDD + nº sem o 9 inicial);
+        // o n8n usa este valor direto em `number`.
+        customer: { ...userInfo, phone: fone.envio },
         // Revenda identificada pelo CNPJ (null se não cadastrada). `total` já é o
         // valor COM desconto aplicado; subtotal é o bruto.
         revenda,
@@ -244,16 +341,20 @@ export default function App() {
     }
   };
 
+  // As duas marcas com o MESMO tamanho visual. Usa as versões `-tight` (recortadas):
+  // os arquivos originais são telas 1755x2194 com muita margem transparente, e como
+  // a arte da ShadeXP é uma faixa fina, dimensionar por altura a deixava minúscula.
+  // Recortadas + largura igual = as duas logos ficam equivalentes. (Lília, 2026-08-20)
   const Header = () => (
     <div className="pt-12 pb-8 flex flex-col items-center gap-4">
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <img src="/logo-luxashade.png" alt="Luxashade" className="h-40 object-contain" />
+        <img src="/logo-luxashade-tight.png" alt="Luxashade" className="w-32 h-auto object-contain" />
       </motion.div>
       <div className="h-px w-12 bg-zinc-200" />
-      <img src="/logo-shadexp.png" alt="ShadeXP" className="h-20 object-contain opacity-70" />
+      <img src="/logo-shadexp-tight.png" alt="ShadeXP" className="w-32 h-auto object-contain" />
     </div>
   );
 
@@ -342,6 +443,69 @@ export default function App() {
             </motion.div>
           )}
 
+          {step === 'login' && (
+            <motion.div
+              key="login"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="min-h-svh flex flex-col justify-center gap-8"
+            >
+              <div className="space-y-3">
+                <Header />
+                <h2 className="text-2xl font-light text-zinc-800">Entrar</h2>
+                <p className="text-zinc-500 text-sm">
+                  {revenda?.nome
+                    ? <>Acesso de <span className="font-medium text-zinc-700">{revenda.nome}</span>. Informe seu usuário e senha.</>
+                    : 'Informe seu usuário e senha.'}
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
+                  <input
+                    type="text"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    placeholder="Usuário"
+                    value={loginUser}
+                    onChange={(e) => { setLoginUser(e.target.value); if (loginErro) setLoginErro(''); }}
+                    className="w-full bg-white border border-zinc-200 rounded-2xl py-5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all text-lg"
+                  />
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
+                  <input
+                    type="password"
+                    placeholder="Senha"
+                    value={loginSenha}
+                    onChange={(e) => { setLoginSenha(e.target.value); if (loginErro) setLoginErro(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && loginUser && loginSenha && !entrando) entrarComUsuario(); }}
+                    className="w-full bg-white border border-zinc-200 rounded-2xl py-5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all text-lg"
+                  />
+                </div>
+                {loginErro && <p className="text-sm text-red-600 px-1 leading-snug">{loginErro}</p>}
+              </div>
+
+              <button
+                disabled={!loginUser || !loginSenha || entrando}
+                onClick={entrarComUsuario}
+                className="w-full bg-zinc-900 text-white py-5 rounded-2xl font-medium disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              >
+                {entrando ? 'Entrando...' : 'Entrar'}
+                {!entrando && <ArrowRight size={20} />}
+              </button>
+
+              <button
+                onClick={() => { setLoginErro(''); setStep('cnpj'); }}
+                className="text-sm text-zinc-500 hover:text-zinc-900 transition-colors mx-auto"
+              >
+                ← Trocar CNPJ
+              </button>
+            </motion.div>
+          )}
+
           {step === 'order' && (
             <OrderFlow
               key={editingItem?.id ?? 'new'}
@@ -366,9 +530,9 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div>
                   <img
-                    src={brand === 'shadexp' ? '/logo-shadexp.png' : '/logo-luxashade.png'}
+                    src={brand === 'shadexp' ? '/logo-shadexp-tight.png' : '/logo-luxashade-tight.png'}
                     alt={BRAND_LABEL[brand]}
-                    className="h-16 object-contain object-left mb-1"
+                    className="w-28 h-auto object-contain object-left mb-1"
                   />
                   <h2 className="text-2xl font-medium flex items-center gap-2">
                     <ShoppingBag size={24} />
@@ -432,7 +596,7 @@ export default function App() {
                     R$ {fmtBRL(total)}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className={cn('grid gap-3', podeGerarPedido ? 'grid-cols-2' : 'grid-cols-1')}>
                   <button
                     disabled={cart.length === 0}
                     onClick={() => { setTipoEnvio('orcamento'); setStep('final'); }}
@@ -440,13 +604,15 @@ export default function App() {
                   >
                     Gerar Orçamento
                   </button>
-                  <button
-                    disabled={cart.length === 0}
-                    onClick={() => { setTipoEnvio('pedido'); setStep('final'); }}
-                    className="bg-zinc-900 text-white py-4 rounded-2xl font-medium shadow-lg shadow-zinc-200 disabled:opacity-50 leading-tight"
-                  >
-                    Gerar Pedido na Fábrica
-                  </button>
+                  {podeGerarPedido && (
+                    <button
+                      disabled={cart.length === 0}
+                      onClick={() => { setTipoEnvio('pedido'); setStep('final'); }}
+                      className="bg-zinc-900 text-white py-4 rounded-2xl font-medium shadow-lg shadow-zinc-200 disabled:opacity-50 leading-tight"
+                    >
+                      Gerar Pedido na Fábrica
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="h-44" />
@@ -480,20 +646,56 @@ export default function App() {
                     className="w-full bg-white border border-zinc-200 rounded-2xl py-5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all"
                   />
                 </div>
-                <div className="relative">
-                  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
-                  <input
-                    type="tel"
-                    placeholder="(00) 00000-0000"
-                    value={userInfo.phone}
-                    onChange={(e) => setUserInfo({ ...userInfo, phone: e.target.value })}
-                    className="w-full bg-white border border-zinc-200 rounded-2xl py-5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all"
-                  />
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
+                    <span className="absolute left-11 top-1/2 -translate-y-1/2 text-zinc-400 text-sm select-none pointer-events-none">
+                      +55
+                    </span>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      autoComplete="tel-national"
+                      placeholder="(62) 99159-2150"
+                      value={userInfo.phone}
+                      onChange={(e) => setUserInfo({ ...userInfo, phone: maskPhoneBR(e.target.value) })}
+                      className={cn(
+                        'w-full bg-white border rounded-2xl py-5 pl-20 pr-4 focus:outline-none focus:ring-2 transition-all',
+                        fonePreview.aviso
+                          ? 'border-amber-300 focus:ring-amber-500/10'
+                          : 'border-zinc-200 focus:ring-zinc-900/5',
+                      )}
+                    />
+                  </div>
+
+                  {/* Conduz a pessoa até o formato certo e mostra o número exato
+                      que será usado no envio — não dá pra errar sem perceber. */}
+                  {fonePreview.aviso ? (
+                    <p className="flex items-center gap-1.5 text-amber-600 text-xs pl-1">
+                      <AlertTriangle size={13} /> {fonePreview.aviso}
+                    </p>
+                  ) : fonePreview.ok ? (
+                    <div className="text-xs pl-1 space-y-0.5">
+                      <p className="flex items-center gap-1.5 text-emerald-600">
+                        <CheckCircle2 size={13} />
+                        Enviaremos para <span className="font-medium tabular-nums">{envioLegivel(fonePreview)}</span>
+                      </p>
+                      {fonePreview.removeuNove && (
+                        <p className="text-zinc-400 pl-[1.15rem]">
+                          Tiramos o 9 inicial: é assim que o WhatsApp registra os números do DDD {fonePreview.ddd}.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-zinc-400 text-xs pl-1">
+                      DDD + número do WhatsApp. O 55 já está incluso.
+                    </p>
+                  )}
                 </div>
               </div>
 
               <button
-                disabled={!userInfo.name || !userInfo.phone || loading}
+                disabled={!userInfo.name || !fonePreview.ok || loading}
                 onClick={handleFinalize}
                 className="w-full bg-zinc-900 text-white py-5 rounded-2xl font-medium disabled:opacity-50 transition-all flex items-center justify-center gap-2"
               >
@@ -543,22 +745,54 @@ export default function App() {
       </div>
       {cnpj && (step === 'brand' || step === 'cart' || step === 'final') && (
         <div className="fixed top-0 left-0 right-0 z-30 pointer-events-none">
-          <div className="max-w-md mx-auto px-6 flex justify-end pt-4">
+          <div className="max-w-md mx-auto px-6 flex items-center justify-end gap-2 pt-4">
+            {/* Admin da revenda enxerga os orçamentos de todos; vendedor, só os dele. */}
             <button
               onClick={abrirHistorico}
               className="pointer-events-auto bg-white border border-zinc-200 shadow-md rounded-full h-11 px-3.5 flex items-center gap-1.5 text-zinc-600 hover:text-zinc-900 hover:shadow-lg transition-all"
-              aria-label="Meus pedidos"
+              aria-label={sessao && sessao.usuario.papel === 'admin' ? 'Orçamentos da revenda' : 'Meus pedidos'}
             >
               <Clock size={17} />
-              <span className="text-xs font-semibold">Meus pedidos</span>
+              <span className="text-xs font-semibold">
+                {sessao && sessao.usuario.papel === 'admin' ? 'Orçamentos' : 'Meus pedidos'}
+              </span>
               {historico.length > 0 && (
                 <span className="bg-zinc-900 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
                   {historico.length}
                 </span>
               )}
             </button>
+
+            {sessao && sessao.usuario.papel === 'admin' && (
+              <button
+                onClick={() => setUsuariosAberto(true)}
+                className="pointer-events-auto bg-white border border-zinc-200 shadow-md rounded-full h-11 w-11 flex items-center justify-center text-zinc-600 hover:text-zinc-900 hover:shadow-lg transition-all"
+                aria-label="Usuários da revenda"
+                title="Usuários"
+              >
+                <Users size={17} />
+              </button>
+            )}
+
+            {sessao && (
+              <button
+                onClick={sairDaConta}
+                className="pointer-events-auto bg-white border border-zinc-200 shadow-md rounded-full h-11 w-11 flex items-center justify-center text-zinc-500 hover:text-red-500 hover:shadow-lg transition-all"
+                aria-label={`Sair (${sessao.usuario.nome || sessao.usuario.login})`}
+                title={`Sair · ${sessao.usuario.nome || sessao.usuario.login}`}
+              >
+                <LogOut size={16} />
+              </button>
+            )}
           </div>
         </div>
+      )}
+      {usuariosAberto && sessao && (
+        <UsuariosModal
+          token={sessao.token}
+          meuId={sessao.usuario.id}
+          onClose={() => setUsuariosAberto(false)}
+        />
       )}
       <HistoricoDrawer
         open={histAberto}

@@ -73,12 +73,22 @@ export const SXP_CONTROLES_MOTORIZADA: readonly OpcionalRule[] = [
 const FALLBACK_REGRA_4X: ReadonlySet<string> = new Set(['ROLO', 'TRIPLE SHADE', 'DOUBLE VISION']);
 export const SXP_ALTURAS_COMANDO_MM: readonly number[] = [500, 1000, 1200, 1500, 1800, 2000, 2500, 3000];
 
-// Luxashade — acionamento MANUAL por corrente contínua (Lília, 2026-06-23).
-// Para estas famílias o comando manual usa corrente contínua, disponível só nestas
-// alturas. A revenda DEVE informar a altura do comando (vira chips, não texto livre).
+// Acionamento MANUAL — dois tipos de corrente (Lília, 2026-06-23; revisto 2026-08-20):
+//
+//  • CORRENTE CONTÍNUA (mecanismo de fábrica): só existe nas alturas padrão abaixo,
+//    então a altura do comando vira CHIPS. A revenda deve informar a altura.
+//      Luxashade: ROMAN SHADE, DUAL SHADE, SOFT SHADE, CELULAR SHADE
+//      ShadeXP:   ROMANA, TRIPLE SHADE, DOUBLE VISION, CELULAR
+//  • CORRENTE AVULSA (acessório "Corrente Metálica Bola 10", cobrada por metro de
+//    comando): cortada na medida → altura DIGITADA LIVREMENTE.
+//      ROLLER SHADE (Luxashade) e ROLO (ShadeXP) — as únicas famílias em que a
+//      corrente aparece como opcional no catálogo.
 export const LUXA_ALTURAS_COMANDO_MM: readonly number[] = [500, 1000, 1200, 1500, 1800, 2000, 2500, 3000, 4000, 5000];
 export const LUXA_CORRENTE_CONTINUA_FAMILIAS: ReadonlySet<string> = new Set([
   'ROMAN SHADE', 'DUAL SHADE', 'SOFT SHADE', 'CELULAR SHADE',
+]);
+export const SXP_CORRENTE_CONTINUA_FAMILIAS: ReadonlySet<string> = new Set([
+  'ROMANA', 'TRIPLE SHADE', 'DOUBLE VISION', 'CELULAR',
 ]);
 
 // Formata valor no estilo das descrições existentes: inteiro sem casas, senão 2.
@@ -154,14 +164,15 @@ export function getLuxaAlturasComando(): readonly number[] {
   return LUXA_ALTURAS_COMANDO_MM;
 }
 
-// True quando o comando manual desta família (no app Luxashade) é por corrente
-// contínua → altura escolhida em chips a partir de getLuxaAlturasComando().
-export function usaCorrenteContinua(familia: string): boolean {
+// True quando o comando manual desta família é por CORRENTE CONTÍNUA → altura só
+// nas medidas de fábrica (chips). False = corrente avulsa, cortada na medida
+// (ROLLER SHADE / ROLO) → altura livre.
+export function usaCorrenteContinua(familia: string, isSxp = false): boolean {
   const r = getRemote();
-  if (r && Array.isArray(r.config?.luxa_corrente_continua_familias)) {
-    return (r.config.luxa_corrente_continua_familias as string[]).includes(familia);
-  }
-  return LUXA_CORRENTE_CONTINUA_FAMILIAS.has(familia);
+  const chave = isSxp ? 'sxp_corrente_continua_familias' : 'luxa_corrente_continua_familias';
+  const cfg = r?.config?.[chave];
+  if (Array.isArray(cfg)) return (cfg as string[]).includes(familia);
+  return (isSxp ? SXP_CORRENTE_CONTINUA_FAMILIAS : LUXA_CORRENTE_CONTINUA_FAMILIAS).has(familia);
 }
 
 export function opcionaisFor(modelo: string): readonly OpcionalRule[] {

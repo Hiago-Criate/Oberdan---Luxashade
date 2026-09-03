@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard, Tag, Ruler, Layers3, Palette, Cpu, Wrench, Settings2,
   History, LogOut, Save, Plus, Trash2, Search, ExternalLink, RefreshCw,
-  AlertTriangle, Check, Lock, RadioTower, X, Upload, FileSpreadsheet, Loader2, CheckCircle2, Store,
+  AlertTriangle, Check, Lock, RadioTower, X, Upload, FileSpreadsheet, Loader2, CheckCircle2, KeyRound, Store,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { cn } from '../utils/cn';
@@ -29,21 +29,57 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   );
 }
 
-function NumCell({ value, onCommit, prefix, placeholder }: { value: number | null; onCommit: (n: number) => void; prefix?: string; placeholder?: string }) {
+// O valor é salvo ao SAIR do campo. Como campo vazio vira 0, apagar sem querer
+// zerava o cadastro em silêncio (foi o que suspeitamos no desconto da revenda
+// Casa & Cortina, 2026-08-20). Agora:
+//   • virar ZERO vindo de um valor diferente de zero  → pede confirmação;
+//   • `confirmarSempre` (usado no Desconto)           → confirma qualquer troca;
+//   • `zeroOk` (usado na Larg. máx)                   → 0/vazio é intencional
+//     ("voltar ao padrão do modelo"), então não pergunta.
+// Cancelar devolve o campo ao valor anterior, sem salvar nada.
+function NumCell({ value, onCommit, prefix, placeholder, label, unidade, confirmarSempre, zeroOk }: {
+  value: number | null; onCommit: (n: number) => void; prefix?: string; placeholder?: string;
+  label?: string; unidade?: string; confirmarSempre?: boolean; zeroOk?: boolean;
+}) {
   const [v, setV] = useState(String(value ?? ''));
   useEffect(() => setV(String(value ?? '')), [value]);
   const dirty = String(value ?? '') !== v;
+
+  const fmt = (n: number | null) => `${n ?? 0}${unidade ?? ''}`;
+  const titulo = label ? `${label}\n\n` : '';
+
+  const commit = () => {
+    if (!dirty) return;
+    const novo = Number(v);
+    const anterior = value;
+    const virouZero = novo === 0 && (anterior ?? 0) !== 0 && !zeroOk;
+
+    if (virouZero) {
+      const vazio = v.trim() === '';
+      const ok = window.confirm(
+        `${titulo}Salvar ZERO no lugar de ${fmt(anterior)}?` +
+        (vazio ? '\n\nO campo ficou VAZIO, e vazio é salvo como zero.' : '') +
+        '\n\nSe foi sem querer, clique em Cancelar.',
+      );
+      if (!ok) { setV(String(value ?? '')); return; }
+    } else if (confirmarSempre) {
+      const ok = window.confirm(`${titulo}Alterar de ${fmt(anterior)} para ${fmt(novo)}?`);
+      if (!ok) { setV(String(value ?? '')); return; }
+    }
+    onCommit(novo);
+  };
+
   return (
     <div className="relative">
       {prefix && <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-zinc-400">{prefix}</span>}
       <input
         type="number"
         value={v}
-        placeholder={placeholder}
+        placeholder={placeholder} title={v}
         onChange={(e) => setV(e.target.value)}
-        onBlur={() => { if (dirty) onCommit(Number(v)); }}
-        className={cn('w-full rounded-lg border bg-white py-1.5 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-zinc-900/10',
-          prefix ? 'pl-7 pr-2' : 'px-2', dirty ? 'border-amber-400' : 'border-zinc-200')}
+        onBlur={commit}
+        className={cn('w-full rounded-lg border bg-white py-2 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-zinc-900/10',
+          prefix ? 'pl-7 pr-2.5' : 'px-2.5', dirty ? 'border-amber-400' : 'border-zinc-200')}
       />
     </div>
   );
@@ -57,10 +93,10 @@ function TxtCell({ value, onCommit, placeholder, list }: { value: string; onComm
     <input
       value={v}
       list={list}
-      placeholder={placeholder}
+      placeholder={placeholder} title={v}
       onChange={(e) => setV(e.target.value)}
       onBlur={() => { if (dirty) onCommit(v); }}
-      className={cn('w-full rounded-lg border bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10',
+      className={cn('w-full rounded-lg border bg-white px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10',
         dirty ? 'border-amber-400' : 'border-zinc-200')}
     />
   );
@@ -138,7 +174,7 @@ function Login({ onOk }: { onOk: () => void }) {
     <div className="min-h-screen flex items-center justify-center bg-zinc-100 px-6">
       <div className="w-full max-w-sm space-y-6 rounded-3xl bg-white p-8 shadow-xl">
         <div className="text-center space-y-2">
-          <img src="/logo-luxashade.png" alt="Luxashade" className="mx-auto h-16 object-contain" />
+          <img src="/logo-luxashade-tight.png" alt="Luxashade" className="mx-auto w-40 h-auto object-contain" />
           <h1 className="text-lg font-semibold text-zinc-800">Painel de Controle</h1>
           <p className="text-xs text-zinc-400">Acesso restrito · Luxashade × ShadeXP</p>
         </div>
@@ -212,7 +248,7 @@ export function AdminApp() {
       {/* Sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-zinc-200 bg-white">
         <div className="p-5">
-          <img src={marca === 'shadexp' ? '/logo-shadexp.png' : '/logo-luxashade.png'} alt={marca} className="h-12 object-contain object-left" />
+          <img src={marca === 'shadexp' ? '/logo-shadexp-tight.png' : '/logo-luxashade-tight.png'} alt={marca} className="w-36 h-auto object-contain object-left" />
           <p className="mt-1 text-[11px] uppercase tracking-widest text-zinc-400">Painel de Controle</p>
         </div>
 
@@ -451,7 +487,7 @@ function Precos({ brandFamilias, toast }: { marca: Marca; brandFamilias: string[
 
       <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
         <div className="max-h-[58vh] overflow-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[1150px] text-sm">
             <thead className="sticky top-0 bg-zinc-50">
               <tr>
                 <Th>Modelo</Th><Th>Acion.</Th><Th>Tipo</Th><Th>Coleção</Th><Th>Cor tecido</Th><Th>Acab.</Th><Th>Código</Th>
@@ -470,8 +506,8 @@ function Precos({ brandFamilias, toast }: { marca: Marca; brandFamilias: string[
                   <Td className="text-zinc-600">{r.cor_tecido}</Td>
                   <Td className="text-xs text-zinc-500">{r.cor_acab}</Td>
                   <Td className="font-mono text-[11px] text-zinc-400">{r.codigo}</Td>
-                  <Td className="w-28"><NumCell value={r.vlr_m2} prefix="R$" onCommit={(n) => setPreco(r, n)} /></Td>
-                  <Td className="w-28"><NumCell value={r.larg_max ?? null} placeholder={modelMax(r) ? `padrão ${modelMax(r)}` : 'padrão'} onCommit={(n) => setLargMax(r, n)} /></Td>
+                  <Td className="w-32"><NumCell value={r.vlr_m2} prefix="R$" onCommit={(n) => setPreco(r, n)} /></Td>
+                  <Td className="w-32"><NumCell zeroOk value={r.larg_max ?? null} placeholder={modelMax(r) ? `padrão ${modelMax(r)}` : 'padrão'} onCommit={(n) => setLargMax(r, n)} /></Td>
                   <Td className="text-center"><div className="flex justify-center"><Toggle on={r.ativo} onChange={(v) => setAtivo(r, v)} /></div></Td>
                 </tr>
               ))}
@@ -497,7 +533,7 @@ function Dimensoes({ brandFamilias, toast }: { brandFamilias: string[]; toast: (
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
       <div className="max-h-[68vh] overflow-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[980px] text-sm">
           <thead className="sticky top-0 bg-zinc-50">
             <tr>
               <Th>Modelo</Th><Th>Acion.</Th>
@@ -511,12 +547,12 @@ function Dimensoes({ brandFamilias, toast }: { brandFamilias: string[]; toast: (
               <tr key={r.id} className="hover:bg-zinc-50">
                 <Td className="max-w-[240px] truncate text-zinc-700">{r.modelo}</Td>
                 <Td className="text-xs text-zinc-500">{r.acionamento}</Td>
-                <Td className="w-24"><NumCell value={r.larg_min} onCommit={(n) => set(r, 'larg_min', n)} /></Td>
-                <Td className="w-24"><NumCell value={r.larg_max} onCommit={(n) => set(r, 'larg_max', n)} /></Td>
-                <Td className="w-24"><NumCell value={r.alt_min} onCommit={(n) => set(r, 'alt_min', n)} /></Td>
-                <Td className="w-24"><NumCell value={r.alt_max} onCommit={(n) => set(r, 'alt_max', n)} /></Td>
-                <Td className="w-20"><NumCell value={r.m2_min} onCommit={(n) => set(r, 'm2_min', n)} /></Td>
-                <Td className="w-20"><NumCell value={r.m2_max} onCommit={(n) => set(r, 'm2_max', n)} /></Td>
+                <Td className="w-28"><NumCell value={r.larg_min} onCommit={(n) => set(r, 'larg_min', n)} /></Td>
+                <Td className="w-28"><NumCell value={r.larg_max} onCommit={(n) => set(r, 'larg_max', n)} /></Td>
+                <Td className="w-28"><NumCell value={r.alt_min} onCommit={(n) => set(r, 'alt_min', n)} /></Td>
+                <Td className="w-28"><NumCell value={r.alt_max} onCommit={(n) => set(r, 'alt_max', n)} /></Td>
+                <Td className="w-24"><NumCell value={r.m2_min} onCommit={(n) => set(r, 'm2_min', n)} /></Td>
+                <Td className="w-24"><NumCell value={r.m2_max} onCommit={(n) => set(r, 'm2_max', n)} /></Td>
               </tr>
             ))}
           </tbody>
@@ -556,7 +592,7 @@ function Colecoes({ brandFamilias, toast }: { brandFamilias: string[]; toast: (m
       <p className="rounded-xl bg-zinc-50 px-4 py-2 text-xs text-zinc-500">As coleções são compartilhadas entre as marcas — alterar estoque/linha vale para Luxashade e ShadeXP.</p>
       <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
         <div className="max-h-[64vh] overflow-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[820px] text-sm">
             <thead className="sticky top-0 bg-zinc-50"><tr>
               <Th>Coleção</Th><Th>Tipo</Th><Th className="text-center">Em linha</Th><Th>Estoque</Th><Th>Observação</Th>
             </tr></thead>
@@ -593,7 +629,7 @@ function Cores({ brandFamilias, toast }: { brandFamilias: string[]; toast: (m: s
       <p className="rounded-xl bg-zinc-50 px-4 py-2 text-xs text-zinc-500">Cores compartilhadas entre as marcas. "Sob Consulta" mostra aviso no app; "Em falta" some da seleção.</p>
       <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
         <div className="max-h-[64vh] overflow-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead className="sticky top-0 bg-zinc-50"><tr>
               <Th>Cor do tecido</Th><Th className="text-center">Em linha</Th><Th>Estoque</Th><Th>Observação</Th>
             </tr></thead>
@@ -658,20 +694,20 @@ function Trilhos({ toast }: { toast: (m: string) => void }) {
   return (
     <div className="space-y-5">
       {/* Curvas do trilho — preço fixo somado por trilho, usado no app e no PDF. */}
-      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white p-4">
         <div className="mb-1 flex items-center gap-2">
           <h3 className="font-semibold text-zinc-700">Curvas do trilho</h3>
           <span className="text-xs text-zinc-400">preço fixo somado por trilho</span>
         </div>
         <p className="mb-3 text-xs text-zinc-400">Aparecem no app ao configurar o trilho e no PDF. Editar aqui reflete no app ao recarregar.</p>
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[600px] text-sm">
           <thead><tr><Th>Código</Th><Th>Descrição</Th><Th className="text-right">Valor (R$)</Th><Th className="text-center">Ativa</Th></tr></thead>
           <tbody className="divide-y divide-zinc-100">
             {curvas.map((c) => (
               <tr key={c.codigo}>
                 <Td className="w-28 font-mono text-[11px] text-zinc-400">{c.codigo}</Td>
                 <Td><TxtCell value={c.descricao} onCommit={(s) => setCurva(c, 'descricao', s)} /></Td>
-                <Td className="w-28"><NumCell value={c.valor} prefix="R$" onCommit={(n) => setCurva(c, 'valor', n)} /></Td>
+                <Td className="w-32"><NumCell value={c.valor} prefix="R$" onCommit={(n) => setCurva(c, 'valor', n)} /></Td>
                 <Td className="w-16 text-center"><Toggle on={c.ativo} onChange={(v) => setCurva(c, 'ativo', v)} /></Td>
               </tr>
             ))}
@@ -694,7 +730,7 @@ function Trilhos({ toast }: { toast: (m: string) => void }) {
         ))}
       </div>
 
-      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white p-4">
         {!sel ? (
           <p className="p-6 text-center text-sm text-zinc-400">Selecione um trilho para editar os componentes e o preço linear.</p>
         ) : (
@@ -703,15 +739,15 @@ function Trilhos({ toast }: { toast: (m: string) => void }) {
               <h3 className="font-semibold text-zinc-700">Componentes · {sel}</h3>
               <button onClick={addComp} className="flex items-center gap-1 rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white"><Plus size={13} /> Componente</button>
             </div>
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[620px] text-sm">
               <thead><tr><Th>Código</Th><Th className="text-right">Qtd</Th><Th>Fórmula</Th><Th className="text-right">Valor (R$)</Th><Th /></tr></thead>
               <tbody className="divide-y divide-zinc-100">
                 {comps.map((c) => (
                   <tr key={c.id}>
-                    <Td className="w-32"><TxtCell value={c.comp_codigo} onCommit={(s) => setComp(c, 'comp_codigo', s)} /></Td>
-                    <Td className="w-20"><NumCell value={c.quantidade} onCommit={(n) => setComp(c, 'quantidade', n)} /></Td>
+                    <Td className="w-36"><TxtCell value={c.comp_codigo} onCommit={(s) => setComp(c, 'comp_codigo', s)} /></Td>
+                    <Td className="w-24"><NumCell value={c.quantidade} onCommit={(n) => setComp(c, 'quantidade', n)} /></Td>
                     <Td><TxtCell value={c.formula ?? ''} placeholder="(vazio = fixo)" onCommit={(s) => setComp(c, 'formula', s)} /></Td>
-                    <Td className="w-28"><NumCell value={c.valor} prefix="R$" onCommit={(n) => setComp(c, 'valor', n)} /></Td>
+                    <Td className="w-32"><NumCell value={c.valor} prefix="R$" onCommit={(n) => setComp(c, 'valor', n)} /></Td>
                     <Td><button onClick={() => delComp(c)} className="text-zinc-300 hover:text-red-500"><Trash2 size={15} /></button></Td>
                   </tr>
                 ))}
@@ -794,8 +830,8 @@ function Motores({ marca, brandFamilias, toast }: { marca: Marca; brandFamilias:
       <p className="rounded-xl bg-zinc-50 px-4 py-2 text-xs text-zinc-500">
         Em <b>SHADES</b>, defina em quais <b>grupos de produto</b> (modelos da aba {marca === 'shadexp' ? 'ShadeXP' : 'Luxashade'}, ex.: 400, 402…) cada motor pode ser usado. O app mostra, para cada grupo, só os motores liberados.
       </p>
-      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+        <table className="w-full min-w-[960px] text-sm">
           <thead className="bg-zinc-50"><tr>
             <Th>Motor</Th><Th className="text-right">Preço Branco</Th><Th className="text-right">Preço Preto</Th>
             <Th className="text-center">Trilho</Th><Th>SHADES (grupos)</Th><Th className="text-center">Ativo</Th>
@@ -804,8 +840,8 @@ function Motores({ marca, brandFamilias, toast }: { marca: Marca; brandFamilias:
             {rows.map((r) => (
               <tr key={r.id} className={cn('hover:bg-zinc-50', !r.ativo && 'opacity-50')}>
                 <Td className="text-zinc-700">{r.nome}</Td>
-                <Td className="w-32"><NumCell value={r.preco_branco} prefix="R$" onCommit={(n) => patch(r, { preco_branco: n })} /></Td>
-                <Td className="w-32"><NumCell value={r.preco_preto} prefix="R$" onCommit={(n) => patch(r, { preco_preto: n })} /></Td>
+                <Td className="w-36"><NumCell value={r.preco_branco} prefix="R$" onCommit={(n) => patch(r, { preco_branco: n })} /></Td>
+                <Td className="w-36"><NumCell value={r.preco_preto} prefix="R$" onCommit={(n) => patch(r, { preco_preto: n })} /></Td>
                 <Td className="text-center"><div className="flex justify-center"><Toggle on={r.uso_trilho} onChange={(v) => patch(r, { uso_trilho: v })} /></div></Td>
                 <Td className="min-w-[200px] max-w-[280px]">
                   <button onClick={() => setEditing(r)}
@@ -898,7 +934,7 @@ function Emissores({ toast }: { toast: (m: string) => void }) {
 
       <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
         <div className="max-h-[64vh] overflow-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[1040px] text-sm">
             <thead className="sticky top-0 bg-zinc-50"><tr>
               <Th>Código</Th><Th>Descrição</Th><Th className="text-right">Valor (R$)</Th>
               <Th className="text-right">Canais</Th><Th>Marca do motor</Th>
@@ -908,11 +944,11 @@ function Emissores({ toast }: { toast: (m: string) => void }) {
             <tbody className="divide-y divide-zinc-100">
               {rows.map((r) => (
                 <tr key={r.id} className={cn('hover:bg-zinc-50', !r.ativo && 'opacity-50')}>
-                  <Td className="w-28"><TxtCell value={r.codigo} onCommit={(s) => patch(r, { codigo: s })} /></Td>
+                  <Td className="w-32"><TxtCell value={r.codigo} onCommit={(s) => patch(r, { codigo: s })} /></Td>
                   <Td><TxtCell value={r.descricao} onCommit={(s) => patch(r, { descricao: s })} /></Td>
-                  <Td className="w-28"><NumCell value={r.valor} prefix="R$" onCommit={(n) => patch(r, { valor: n })} /></Td>
-                  <Td className="w-20"><NumCell value={r.canais} onCommit={(n) => patch(r, { canais: n })} /></Td>
-                  <Td className="w-36"><TxtCell value={r.motor_brand} list="motorbrands" onCommit={(s) => patch(r, { motor_brand: s })} /></Td>
+                  <Td className="w-32"><NumCell value={r.valor} prefix="R$" onCommit={(n) => patch(r, { valor: n })} /></Td>
+                  <Td className="w-24"><NumCell value={r.canais} onCommit={(n) => patch(r, { canais: n })} /></Td>
+                  <Td className="w-40"><TxtCell value={r.motor_brand} list="motorbrands" onCommit={(s) => patch(r, { motor_brand: s })} /></Td>
                   <Td className="text-center"><div className="flex justify-center"><Toggle on={r.brand_luxashade} onChange={(v) => patch(r, { brand_luxashade: v })} /></div></Td>
                   <Td className="text-center"><div className="flex justify-center"><Toggle on={r.brand_shadexp} onChange={(v) => patch(r, { brand_shadexp: v })} /></div></Td>
                   <Td className="text-center"><div className="flex justify-center"><Toggle on={r.ativo} onChange={(v) => patch(r, { ativo: v })} /></div></Td>
@@ -957,10 +993,22 @@ function Revendas({ toast }: { toast: (m: string) => void }) {
   const [rows, setRows] = useState<any[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
+  // Login do app por revenda: quem é o admin dela e quantos usuários existem.
+  const [logins, setLogins] = useState<Record<string, { login: string | null; ativo: boolean; usuarios: number }>>({});
+  const [acesso, setAcesso] = useState<any | null>(null);   // revenda no modal de acesso
+
+  const carregarLogins = async () => {
+    const { data } = await supabase.rpc('admin_login_revendas');
+    const m: Record<string, { login: string | null; ativo: boolean; usuarios: number }> = {};
+    for (const r of (data ?? []) as any[]) {
+      m[r.revenda_id] = { login: r.admin_login ?? null, ativo: r.admin_ativo !== false, usuarios: Number(r.usuarios) || 0 };
+    }
+    setLogins(m);
+  };
 
   const reload = () =>
     fetchAll('revendas', { order: { col: 'nome' } })
-      .then((rs) => { setRows(rs); setErro(null); })
+      .then((rs) => { setRows(rs); setErro(null); carregarLogins(); })
       .catch((e) => setErro(e?.message ?? 'Falha ao carregar revendas.'));
   useEffect(() => { reload(); }, []);
 
@@ -1006,6 +1054,15 @@ function Revendas({ toast }: { toast: (m: string) => void }) {
         </button>
       </div>
 
+      {acesso && (
+        <AcessoRevendaModal
+          revenda={acesso}
+          atual={logins[acesso.id]?.login ?? null}
+          onClose={() => setAcesso(null)}
+          onSaved={(msg) => { setAcesso(null); toast(msg); carregarLogins(); }}
+        />
+      )}
+
       {erro && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
           <p className="font-semibold">A tabela <code>revendas</code> ainda não existe no banco.</p>
@@ -1021,26 +1078,52 @@ function Revendas({ toast }: { toast: (m: string) => void }) {
 
       <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
         <div className="max-h-[64vh] overflow-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[1670px] text-sm">
             <thead className="sticky top-0 bg-zinc-50"><tr>
               <Th>Código</Th><Th>Loja</Th><Th>Filial</Th><Th>Nome</Th>
               <Th>Telefone</Th><Th>CNPJ</Th><Th className="text-right">Desc. %</Th>
               <Th>Vendedor</Th><Th>Cód. Vend.</Th><Th>Acesso</Th>
+              <Th>Login do app</Th>
               <Th className="text-center">Ativo</Th><Th />
             </tr></thead>
             <tbody className="divide-y divide-zinc-100">
               {filtered.map((r) => (
                 <tr key={r.id} className={cn('hover:bg-zinc-50', !r.ativo && 'opacity-50')}>
-                  <Td className="w-24"><TxtCell value={r.codigo ?? ''} onCommit={(s) => patch(r, { codigo: s })} /></Td>
+                  <Td className="w-28"><TxtCell value={r.codigo ?? ''} onCommit={(s) => patch(r, { codigo: s })} /></Td>
                   <Td className="w-16"><TxtCell value={r.loja ?? ''} onCommit={(s) => patch(r, { loja: s })} /></Td>
                   <Td className="w-16"><TxtCell value={r.filial ?? ''} onCommit={(s) => patch(r, { filial: s })} /></Td>
-                  <Td className="min-w-[180px]"><TxtCell value={r.nome ?? ''} onCommit={(s) => patch(r, { nome: s })} /></Td>
-                  <Td className="w-32"><TxtCell value={r.telefone ?? ''} placeholder="(00) 00000-0000" onCommit={(s) => patch(r, { telefone: s })} /></Td>
-                  <Td className="w-40"><TxtCell value={r.cnpj ?? ''} placeholder="00.000.000/0000-00" onCommit={(s) => patch(r, { cnpj: s })} /></Td>
-                  <Td className="w-20"><NumCell value={r.desconto} onCommit={(n) => patch(r, { desconto: n })} /></Td>
-                  <Td className="w-32"><TxtCell value={r.vendedor ?? ''} onCommit={(s) => patch(r, { vendedor: s })} /></Td>
-                  <Td className="w-20"><TxtCell value={r.cod_vendedor ?? ''} onCommit={(s) => patch(r, { cod_vendedor: s })} /></Td>
-                  <Td className="w-28"><AcessoSelect value={r.acesso ?? 'AMBOS'} onChange={(v) => patch(r, { acesso: v })} /></Td>
+                  <Td className="min-w-[260px]"><TxtCell value={r.nome ?? ''} onCommit={(s) => patch(r, { nome: s })} /></Td>
+                  <Td className="w-40"><TxtCell value={r.telefone ?? ''} placeholder="(00) 00000-0000" onCommit={(s) => patch(r, { telefone: s })} /></Td>
+                  <Td className="w-48"><TxtCell value={r.cnpj ?? ''} placeholder="00.000.000/0000-00" onCommit={(s) => patch(r, { cnpj: s })} /></Td>
+                  <Td className="w-24">
+                    <NumCell
+                      value={r.desconto}
+                      label={`Desconto de ${r.nome || 'revenda'}`}
+                      unidade="%"
+                      confirmarSempre
+                      onCommit={(n) => patch(r, { desconto: n })}
+                    />
+                  </Td>
+                  <Td className="w-44"><TxtCell value={r.vendedor ?? ''} onCommit={(s) => patch(r, { vendedor: s })} /></Td>
+                  <Td className="w-24"><TxtCell value={r.cod_vendedor ?? ''} onCommit={(s) => patch(r, { cod_vendedor: s })} /></Td>
+                  <Td className="w-32"><AcessoSelect value={r.acesso ?? 'AMBOS'} onChange={(v) => patch(r, { acesso: v })} /></Td>
+                  <Td className="w-52">
+                    <button
+                      onClick={() => setAcesso(r)}
+                      className="flex w-full items-center gap-2 rounded-lg border border-zinc-200 px-2 py-1.5 text-left text-xs hover:border-zinc-300 hover:bg-zinc-50"
+                      title="Definir o login do administrador desta revenda"
+                    >
+                      <KeyRound size={13} className="shrink-0 text-zinc-400" />
+                      {logins[r.id]?.login ? (
+                        <span className="min-w-0 flex-1 truncate">
+                          <span className="font-medium text-zinc-700">{logins[r.id].login}</span>
+                          <span className="text-zinc-400"> · {logins[r.id].usuarios} usuário{logins[r.id].usuarios === 1 ? '' : 's'}</span>
+                        </span>
+                      ) : (
+                        <span className="flex-1 text-zinc-400">definir acesso…</span>
+                      )}
+                    </button>
+                  </Td>
                   <Td className="text-center"><div className="flex justify-center"><Toggle on={r.ativo} onChange={(v) => patch(r, { ativo: v })} /></div></Td>
                   <Td><button onClick={() => del(r)} className="text-zinc-300 hover:text-red-500"><Trash2 size={15} /></button></Td>
                 </tr>
@@ -1053,6 +1136,77 @@ function Revendas({ toast }: { toast: (m: string) => void }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Define o ADMINISTRADOR da revenda (quem entra no app e gerencia os vendedores).
+// Enquanto a revenda não tiver este acesso, ela continua entrando só com o CNPJ.
+function AcessoRevendaModal({ revenda, atual, onClose, onSaved }: {
+  revenda: any; atual: string | null; onClose: () => void; onSaved: (msg: string) => void;
+}) {
+  const [login, setLogin] = useState(atual ?? '');
+  const [nome, setNome] = useState('');
+  const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
+
+  const salvar = async () => {
+    setErro(''); setSalvando(true);
+    const { data, error } = await supabase.rpc('admin_definir_admin_revenda', {
+      p_revenda_id: revenda.id, p_login: login, p_senha: senha, p_nome: nome,
+    });
+    setSalvando(false);
+    if (error) {
+      const faltaSql = /Could not find the function|schema cache|does not exist/i.test(error.message ?? '');
+      setErro(faltaSql
+        ? 'O login de revenda ainda não está ligado no banco. Rode uma vez o arquivo sql/usuarios_revenda.sql em Supabase → SQL Editor.'
+        : (error.message ?? 'Falha ao salvar.'));
+      return;
+    }
+    if (!data?.ok) { setErro(String(data?.motivo ?? 'Falha ao salvar.')); return; }
+    onSaved(data.acao === 'criado' ? 'Acesso criado' : 'Acesso atualizado');
+  };
+
+  return (
+    <Modal title={`Acesso ao app · ${revenda.nome || 'revenda'}`} onClose={onClose}>
+      <div className="space-y-3 text-sm">
+        <p className="rounded-xl bg-zinc-50 px-3 py-2 text-xs text-zinc-500 leading-snug">
+          Cria o <b>administrador</b> desta revenda. Ele entra no app com o CNPJ e este
+          usuário/senha, gera orçamento <b>e pedido</b>, vê os orçamentos de todos os
+          vendedores e cadastra os vendedores dele.
+          {atual && <> Salvar de novo <b>troca a senha</b> e desconecta as sessões abertas.</>}
+        </p>
+        <div>
+          <label className="text-xs text-zinc-500">Usuário</label>
+          <input value={login} onChange={(e) => setLogin(e.target.value)} autoCapitalize="none"
+            placeholder="ex: casaecortina"
+            className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10" />
+        </div>
+        <div>
+          <label className="text-xs text-zinc-500">Nome (opcional)</label>
+          <input value={nome} onChange={(e) => setNome(e.target.value)}
+            placeholder="ex: Fernanda (gerente)"
+            className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10" />
+        </div>
+        <div>
+          <label className="text-xs text-zinc-500">{atual ? 'Nova senha' : 'Senha'}</label>
+          <input value={senha} onChange={(e) => setSenha(e.target.value)} autoCapitalize="none"
+            placeholder="mínimo 4 caracteres"
+            className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10" />
+        </div>
+        {erro && <p className="text-xs text-red-600 leading-snug">{erro}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="rounded-lg px-3 py-2 text-xs text-zinc-500 hover:bg-zinc-100">Cancelar</button>
+          <button
+            onClick={salvar}
+            disabled={login.trim().length < 3 || senha.length < 4 || salvando}
+            className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white disabled:opacity-40"
+          >
+            {salvando ? 'Salvando…' : atual ? 'Atualizar acesso' : 'Criar acesso'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1142,18 +1296,18 @@ function Opcionais({ marca, toast }: { marca: Marca; toast: (m: string) => void 
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+        <table className="w-full min-w-[1000px] text-sm">
           <thead className="bg-zinc-50"><tr>
             <Th>Código</Th><Th>Descrição</Th><Th className="text-right">Valor</Th><Th>Fórmula</Th><Th>Grupos / modelos</Th><Th className="text-center">Ativo</Th><Th />
           </tr></thead>
           <tbody className="divide-y divide-zinc-100">
             {visibleRows.map((r) => (
               <tr key={r.id} className={cn('hover:bg-zinc-50', !r.ativo && 'opacity-50')}>
-                <Td className="w-28"><TxtCell value={r.codigo} onCommit={(s) => patch(r, { codigo: s })} /></Td>
+                <Td className="w-32"><TxtCell value={r.codigo} onCommit={(s) => patch(r, { codigo: s })} /></Td>
                 <Td><TxtCell value={r.descricao} onCommit={(s) => patch(r, { descricao: s })} /></Td>
-                <Td className="w-28"><NumCell value={r.valor} prefix="R$" onCommit={(n) => patch(r, { valor: n })} /></Td>
-                <Td className="w-36">
+                <Td className="w-32"><NumCell value={r.valor} prefix="R$" onCommit={(n) => patch(r, { valor: n })} /></Td>
+                <Td className="w-40">
                   <select value={r.formula} onChange={(e) => patch(r, { formula: e.target.value })} className="w-full rounded-lg border border-zinc-200 px-2 py-1.5 text-xs">
                     {FORMULAS_OPC.map((f) => <option key={f} value={f}>{f}</option>)}
                   </select>
@@ -1247,36 +1401,104 @@ function ConfigCard({ row, toast }: { row: any; toast: (m: string) => void }) {
 // ============================ Histórico ============================
 function Historico() {
   const [rows, setRows] = useState<any[]>([]);
-  useEffect(() => {
-    supabase.from('audit_log').select('*').order('criado_em', { ascending: false }).limit(120).then(({ data }) => setRows(data ?? []));
-  }, []);
+  const [erro, setErro] = useState<string | null>(null);
+  const [busca, setBusca] = useState('');
+  const [carregando, setCarregando] = useState(true);
+
+  const carregar = () => {
+    setCarregando(true);
+    supabase.from('audit_log').select('*').order('criado_em', { ascending: false }).limit(300)
+      .then(({ data, error }) => {
+        setErro(error ? (error.message ?? 'Falha ao ler o histórico.') : null);
+        setRows(data ?? []);
+        setCarregando(false);
+      });
+  };
+  useEffect(carregar, []);
+
   const acaoLabel: Record<string, string> = { INSERT: 'criou', UPDATE: 'alterou', DELETE: 'removeu' };
-  const diff = (r: any) => {
-    if (r.acao !== 'UPDATE' || !r.antes || !r.depois) return '';
+  const IGNORAR = new Set(['updated_at', 'id']);
+
+  // Identifica O QUE foi mexido (nome/código/descrição), não só a tabela.
+  const alvo = (r: any) => {
+    const o = r.depois ?? r.antes ?? {};
+    const nome = o.nome ?? o.descricao ?? o.codigo ?? o.modelo ?? o.chave ?? '';
+    const cod = o.codigo && o.codigo !== nome ? ` (${o.codigo})` : '';
+    return `${nome}${cod}`.trim();
+  };
+
+  const mudancas = (r: any): string[] => {
+    if (r.acao !== 'UPDATE' || !r.antes || !r.depois) return [];
     const out: string[] = [];
     for (const k of Object.keys(r.depois)) {
-      if (k === 'updated_at') continue;
-      if (JSON.stringify(r.antes[k]) !== JSON.stringify(r.depois[k])) out.push(`${k}: ${r.antes[k]} → ${r.depois[k]}`);
+      if (IGNORAR.has(k)) continue;
+      if (JSON.stringify(r.antes[k]) !== JSON.stringify(r.depois[k])) {
+        out.push(`${k}: ${r.antes[k] ?? '—'} → ${r.depois[k] ?? '—'}`);
+      }
     }
-    return out.join(' · ');
+    return out;
   };
+
+  const t = busca.trim().toLowerCase();
+  const lista = t
+    ? rows.filter((r) => [r.tabela, r.usuario, alvo(r), mudancas(r).join(' ')]
+        .some((x) => String(x ?? '').toLowerCase().includes(t)))
+    : rows;
+
+  // A tabela ainda não existe no banco (404 / relação ausente).
+  const semTabela = !!erro && /does not exist|not find|schema cache|404/i.test(erro);
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
-      <table className="w-full text-sm">
-        <thead className="bg-zinc-50"><tr><Th>Quando</Th><Th>Quem</Th><Th>Tabela</Th><Th>Ação</Th><Th>Mudança</Th></tr></thead>
-        <tbody className="divide-y divide-zinc-100">
-          {rows.map((r) => (
-            <tr key={r.id} className="hover:bg-zinc-50">
-              <Td className="whitespace-nowrap text-xs text-zinc-500">{new Date(r.criado_em).toLocaleString('pt-BR')}</Td>
-              <Td className="text-xs text-zinc-500">{r.usuario}</Td>
-              <Td className="text-xs text-zinc-600">{r.tabela}</Td>
-              <Td className="text-xs"><span className="rounded-full bg-zinc-100 px-2 py-0.5">{acaoLabel[r.acao] ?? r.acao}</span></Td>
-              <Td className="text-xs text-zinc-500">{diff(r)}</Td>
-            </tr>
-          ))}
-          {rows.length === 0 && <tr><Td className="text-zinc-400">Sem alterações registradas ainda.</Td></tr>}
-        </tbody>
-      </table>
+    <div className="space-y-3">
+      {semTabela ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <p className="font-semibold">O histórico ainda não está ligado neste banco.</p>
+          <p className="mt-1">
+            Rode uma vez o arquivo <code>sql/audit_log.sql</code> em <b>Supabase → SQL Editor</b>.
+            A partir daí toda alteração feita aqui fica registrada (quem, quando, de quanto para quanto).
+          </p>
+        </div>
+      ) : erro ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">{erro}</div>
+      ) : null}
+
+      <div className="flex items-center gap-2">
+        <div className="flex flex-1 items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2">
+          <Search size={15} className="text-zinc-400" />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por revenda, campo, quem alterou…"
+            className="w-full bg-transparent text-sm focus:outline-none" />
+        </div>
+        <button onClick={carregar}
+          className="flex items-center gap-1 whitespace-nowrap rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-600">
+          <RefreshCw size={13} /> Recarregar
+        </button>
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white">
+        <table className="w-full min-w-[900px] text-sm">
+          <thead className="bg-zinc-50"><tr>
+            <Th>Quando</Th><Th>Quem</Th><Th>Onde</Th><Th>O quê</Th><Th>Ação</Th><Th>Mudança</Th>
+          </tr></thead>
+          <tbody className="divide-y divide-zinc-100">
+            {lista.map((r) => (
+              <tr key={r.id} className="hover:bg-zinc-50 align-top">
+                <Td className="whitespace-nowrap text-xs text-zinc-500">{new Date(r.criado_em).toLocaleString('pt-BR')}</Td>
+                <Td className="text-xs text-zinc-500">{r.usuario}</Td>
+                <Td className="text-xs text-zinc-600">{r.tabela}</Td>
+                <Td className="text-xs font-medium text-zinc-700">{alvo(r)}</Td>
+                <Td className="text-xs"><span className="rounded-full bg-zinc-100 px-2 py-0.5">{acaoLabel[r.acao] ?? r.acao}</span></Td>
+                <Td className="text-xs text-zinc-500">
+                  {mudancas(r).map((m, i) => <div key={i}>{m}</div>)}
+                </Td>
+              </tr>
+            ))}
+            {lista.length === 0 && !carregando && !semTabela && (
+              <tr><Td className="text-zinc-400">Nenhuma alteração registrada{t ? ' para esta busca' : ' ainda'}.</Td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

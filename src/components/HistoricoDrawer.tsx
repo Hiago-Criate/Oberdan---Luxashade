@@ -92,6 +92,12 @@ export function HistoricoDrawer({ open, loading, pedidos, onClose, onSelect, onR
                         >
                           {isPedido ? 'Pedido' : 'Orçamento'}
                         </span>
+                        {/* Com login ativo, o admin da revenda vê de quem é cada um. */}
+                        {p.autor && !p.meu && (
+                          <span className="flex-1 truncate text-[11px] text-zinc-400">
+                            por {p.autor}
+                          </span>
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
