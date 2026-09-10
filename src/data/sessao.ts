@@ -17,6 +17,9 @@ export interface UsuarioRevenda {
   login: string;
   nome: string | null;
   papel: Papel;
+  /** Senha definida por outra pessoa. Enquanto for true, o banco só deixa a
+   *  sessão trocar a senha: não dá para pular a tela mexendo no navegador. */
+  senhaTemporaria: boolean;
 }
 
 export interface Sessao {
@@ -36,6 +39,7 @@ const mapUsuario = (u: any): UsuarioRevenda => ({
   login: String(u?.login ?? ''),
   nome: (u?.nome as string) ?? null,
   papel: u?.papel === 'admin' ? 'admin' : 'vendedor',
+  senhaTemporaria: u?.senha_temporaria === true,
 });
 
 /** A revenda deste CNPJ já tem login configurado?
@@ -117,11 +121,11 @@ const resultado = (data: any, error: any, padrao: string): AcaoResultado => {
 };
 
 export async function criarUsuario(
-  token: string, login: string, senha: string, nome: string,
+  token: string, login: string, senha: string, nome: string, papel: Papel = 'vendedor',
 ): Promise<AcaoResultado> {
   try {
     const { data, error } = await supabase.rpc('criar_usuario_revenda', {
-      p_token: token, p_login: login, p_senha: senha, p_nome: nome,
+      p_token: token, p_login: login, p_senha: senha, p_nome: nome, p_papel: papel,
     });
     return resultado(data, error, 'Não foi possível criar o usuário.');
   } catch {
@@ -146,5 +150,30 @@ export async function trocarSenhaUsuario(token: string, id: string, senha: strin
     return resultado(data, error, 'Não foi possível trocar a senha.');
   } catch {
     return { ok: false, erro: 'Não foi possível trocar a senha.' };
+  }
+}
+
+/** Troca a PRÓPRIA senha. `senhaAtual` é dispensada quando a senha em uso é
+ *  temporária (o token já provou quem é). A sessão atual continua valendo; as
+ *  outras sessões do mesmo usuário caem. */
+export async function trocarMinhaSenha(
+  token: string, senhaAtual: string, nova: string,
+): Promise<AcaoResultado> {
+  try {
+    const { data, error } = await supabase.rpc('trocar_minha_senha', {
+      p_token: token, p_senha_atual: senhaAtual, p_nova: nova,
+    });
+    if (error) return { ok: false, erro: 'Não conseguimos trocar a senha agora. Tente de novo.' };
+    if (!data?.ok) {
+      return {
+        ok: false,
+        erro: data?.motivo === 'sessao'
+          ? 'Sua sessão expirou. Entre de novo.'
+          : String(data?.motivo || 'Não foi possível trocar a senha.'),
+      };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, erro: 'Não conseguimos trocar a senha agora. Tente de novo.' };
   }
 }

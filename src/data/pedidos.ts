@@ -60,7 +60,8 @@ export interface SalvarResultado {
   ok: boolean;
   id?: string;
   erro?: string;
-  sessaoMorta?: boolean;   // precisa fazer login de novo
+  sessaoMorta?: boolean;    // precisa fazer login de novo
+  trocarSenha?: boolean;    // senha ainda é a temporária
 }
 
 // Traduz a recusa do banco para uma frase que a pessoa entende.
@@ -68,6 +69,9 @@ function motivoDoBanco(error: any): SalvarResultado {
   const msg = String(error?.message || '');
   if (msg.includes('somente o administrador')) {
     return { ok: false, erro: 'Só o administrador da revenda pode gerar pedido de fábrica. Você pode gerar orçamento.' };
+  }
+  if (msg.includes('troque a senha')) {
+    return { ok: false, trocarSenha: true, erro: 'Crie a sua senha antes de continuar.' };
   }
   if (msg.includes('sessao invalida') || msg.includes('usa login')) {
     return { ok: false, sessaoMorta: true, erro: 'Sua sessão expirou. Entre de novo para continuar.' };

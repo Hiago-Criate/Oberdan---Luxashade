@@ -15,6 +15,8 @@ import {
   Lock,
   Users,
   LogOut,
+  KeyRound,
+  ShieldCheck,
 } from 'lucide-react';
 import axios from 'axios';
 import { OrderFlow } from './components/OrderFlow';
@@ -30,13 +32,13 @@ import { modulosDuplaLabel, type OrderItem } from './types/order';
 import { maskPhoneBR, parsePhoneBR, envioLegivel } from './utils/phone';
 import { UsuariosModal } from './components/UsuariosModal';
 import {
-  revendaExigeLogin, loginRevenda, logoutRevenda, type Sessao,
+  revendaExigeLogin, loginRevenda, logoutRevenda, trocarMinhaSenha, type Sessao,
 } from './data/sessao';
 
 const fmtBRL = (n: number) => (n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
 const fmtPct = (n: number) => `${(n || 0).toLocaleString('pt-BR')}%`;
 
-type Step = 'landing' | 'cnpj' | 'login' | 'brand' | 'order' | 'cart' | 'final' | 'success';
+type Step = 'landing' | 'cnpj' | 'login' | 'novasenha' | 'brand' | 'order' | 'cart' | 'final' | 'success';
 type TipoEnvio = 'orcamento' | 'pedido';
 
 const WEBHOOK_URL = 'https://212hook.criate.online/webhook/94e9c23d-4b00-40aa-8e20-8e4da2c94907';
@@ -60,6 +62,13 @@ export default function App() {
   const [usuariosAberto, setUsuariosAberto] = useState(false);
   // true só quando o banco confirmou que a revenda ainda não usa login.
   const [modoLegado, setModoLegado] = useState(false);
+  // Troca de senha do próprio usuário (obrigatória no 1º acesso).
+  const [senhaAtual, setSenhaAtual] = useState('');
+  const [senhaNova, setSenhaNova] = useState('');
+  const [senhaNova2, setSenhaNova2] = useState('');
+  const [senhaErro, setSenhaErro] = useState('');
+  const [salvandoSenha, setSalvandoSenha] = useState(false);
+  const [stepAntesDaSenha, setStepAntesDaSenha] = useState<Step>('brand');
   // Histórico de pedidos do CNPJ (persistido no Supabase via RPCs).
   const [pedidoId, setPedidoId] = useState<string | null>(null);
   const [pedidoNumero, setPedidoNumero] = useState<string | null>(null);
@@ -88,6 +97,10 @@ export default function App() {
   // para entrar sem login já valendo como admin.)
   const ehAdmin = sessao ? sessao.usuario.papel === 'admin' : modoLegado;
   const podeGerarPedido = ehAdmin;
+  // Senha ainda é a temporária que a Luxashade (ou o admin da revenda) cadastrou.
+  // Enquanto for, a tela de nova senha não tem saída além de sair da conta, e o
+  // banco recusa qualquer outra coisa nessa sessão.
+  const senhaObrigatoria = !!sessao?.usuario.senhaTemporaria;
   const token = sessao?.token ?? null;
 
   // Identifica a revenda pelo CNPJ e libera as marcas conforme o `acesso`.
@@ -151,8 +164,40 @@ export default function App() {
     setSessao(nova);
     setModoLegado(false);
     setLoginSenha('');
+    if (nova.usuario.senhaTemporaria) {
+      // Primeiro acesso: a senha veio de outra pessoa. Cria a sua antes de tudo.
+      setSenhaAtual(''); setSenhaNova(''); setSenhaNova2(''); setSenhaErro('');
+      setStepAntesDaSenha('brand');
+      setStep('novasenha');
+      return;
+    }
     listarPedidos(cnpj, nova.token).then(setHistorico);
     setStep('brand');
+  };
+
+  // Abre a troca de senha por vontade própria (não é o primeiro acesso).
+  const abrirTrocaSenha = () => {
+    setUsuariosAberto(false);
+    setSenhaAtual(''); setSenhaNova(''); setSenhaNova2(''); setSenhaErro('');
+    setStepAntesDaSenha(step === 'novasenha' ? 'brand' : step);
+    setStep('novasenha');
+  };
+
+  const confirmarNovaSenha = async () => {
+    if (!sessao) return;
+    if (senhaNova !== senhaNova2) { setSenhaErro('As duas senhas não são iguais.'); return; }
+    setSalvandoSenha(true); setSenhaErro('');
+    const r = await trocarMinhaSenha(sessao.token, senhaAtual, senhaNova);
+    setSalvandoSenha(false);
+    if (!r.ok) { setSenhaErro(r.erro || 'Não foi possível trocar a senha.'); return; }
+    const atualizada: Sessao = {
+      ...sessao,
+      usuario: { ...sessao.usuario, senhaTemporaria: false },
+    };
+    setSessao(atualizada);
+    setSenhaAtual(''); setSenhaNova(''); setSenhaNova2('');
+    listarPedidos(cnpj, atualizada.token).then(setHistorico);
+    setStep(stepAntesDaSenha);
   };
 
   // Sai do usuário e volta pro começo (o CNPJ é digitado de novo).
@@ -161,6 +206,7 @@ export default function App() {
     setSessao(null); setModoLegado(false); setHistorico([]); setCart([]); setRevenda(null);
     setPedidoId(null); setPedidoNumero(null);
     setCnpj(''); setLoginUser(''); setLoginSenha('');
+    setSenhaAtual(''); setSenhaNova(''); setSenhaNova2(''); setSenhaErro('');
     setUserInfo({ name: '', phone: '' });
     setStep('landing');
   };
@@ -293,7 +339,10 @@ export default function App() {
 
       if (!salvo.ok) {
         alert(salvo.erro || 'Não conseguimos registrar agora. Tente de novo.');
-        if (salvo.sessaoMorta) {
+        if (salvo.trocarSenha) {
+          setStepAntesDaSenha('cart');
+          setStep('novasenha');
+        } else if (salvo.sessaoMorta) {
           setSessao(null); setModoLegado(false);
           setLoginUser(''); setLoginSenha('');
           setLoginErro('Sua sessão expirou. Entre de novo para continuar.');
@@ -502,6 +551,100 @@ export default function App() {
                 className="text-sm text-zinc-500 hover:text-zinc-900 transition-colors mx-auto"
               >
                 ← Trocar CNPJ
+              </button>
+            </motion.div>
+          )}
+
+          {step === 'novasenha' && sessao && (
+            <motion.div
+              key="novasenha"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="min-h-svh flex flex-col justify-center gap-8"
+            >
+              <div className="space-y-3">
+                <Header />
+                <h2 className="text-2xl font-light text-zinc-800">
+                  {senhaObrigatoria ? 'Crie a sua senha' : 'Trocar a minha senha'}
+                </h2>
+                {senhaObrigatoria ? (
+                  <div className="flex gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                    <ShieldCheck className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                    <p className="text-sm text-amber-900 leading-snug">
+                      A senha que você usou foi cadastrada por outra pessoa e é temporária.
+                      Escolha agora uma senha que só você saiba. A partir daí, ninguém da
+                      Luxashade consegue entrar no lugar da sua revenda.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-zinc-500 text-sm">
+                    Entrando como <span className="font-medium text-zinc-700">{sessao.usuario.login}</span>.
+                    Informe a senha atual e escolha a nova.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                {!senhaObrigatoria && (
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
+                    <input
+                      type="password"
+                      autoComplete="current-password"
+                      placeholder="Senha atual"
+                      value={senhaAtual}
+                      onChange={(e) => { setSenhaAtual(e.target.value); if (senhaErro) setSenhaErro(''); }}
+                      className="w-full bg-white border border-zinc-200 rounded-2xl py-5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all text-lg"
+                    />
+                  </div>
+                )}
+                <div className="relative">
+                  <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Nova senha (mín. 4 caracteres)"
+                    value={senhaNova}
+                    onChange={(e) => { setSenhaNova(e.target.value); if (senhaErro) setSenhaErro(''); }}
+                    className="w-full bg-white border border-zinc-200 rounded-2xl py-5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all text-lg"
+                  />
+                </div>
+                <div className="relative">
+                  <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Repita a nova senha"
+                    value={senhaNova2}
+                    onChange={(e) => { setSenhaNova2(e.target.value); if (senhaErro) setSenhaErro(''); }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && senhaNova && senhaNova2 && !salvandoSenha) confirmarNovaSenha();
+                    }}
+                    className="w-full bg-white border border-zinc-200 rounded-2xl py-5 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-zinc-900/5 transition-all text-lg"
+                  />
+                </div>
+                {senhaErro && <p className="text-sm text-red-600 px-1 leading-snug">{senhaErro}</p>}
+              </div>
+
+              <button
+                disabled={
+                  !senhaNova || !senhaNova2 || salvandoSenha ||
+                  (!senhaObrigatoria && !senhaAtual)
+                }
+                onClick={confirmarNovaSenha}
+                className="w-full bg-zinc-900 text-white py-5 rounded-2xl font-medium disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              >
+                {salvandoSenha ? 'Salvando...' : 'Salvar senha'}
+                {!salvandoSenha && <ArrowRight size={20} />}
+              </button>
+
+              {/* Sem saída no 1º acesso: ou cria a senha, ou sai da conta. */}
+              <button
+                onClick={senhaObrigatoria ? sairDaConta : () => setStep(stepAntesDaSenha)}
+                className="text-sm text-zinc-500 hover:text-zinc-900 transition-colors mx-auto"
+              >
+                {senhaObrigatoria ? 'Sair da conta' : '← Voltar'}
               </button>
             </motion.div>
           )}
@@ -774,6 +917,17 @@ export default function App() {
               </button>
             )}
 
+            {sessao && !senhaObrigatoria && (
+              <button
+                onClick={abrirTrocaSenha}
+                className="pointer-events-auto bg-white border border-zinc-200 shadow-md rounded-full h-11 w-11 flex items-center justify-center text-zinc-600 hover:text-zinc-900 hover:shadow-lg transition-all"
+                aria-label="Trocar a minha senha"
+                title="Trocar a minha senha"
+              >
+                <KeyRound size={17} />
+              </button>
+            )}
+
             {sessao && (
               <button
                 onClick={sairDaConta}
@@ -791,6 +945,7 @@ export default function App() {
         <UsuariosModal
           token={sessao.token}
           meuId={sessao.usuario.id}
+          onMinhaSenha={abrirTrocaSenha}
           onClose={() => setUsuariosAberto(false)}
         />
       )}

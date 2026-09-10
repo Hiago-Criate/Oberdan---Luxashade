@@ -5,19 +5,21 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { X, UserPlus, Trash2, KeyRound, Loader2 } from 'lucide-react';
+import { X, UserPlus, Trash2, KeyRound, Loader2, ShieldAlert } from 'lucide-react';
 import {
   listarUsuarios, criarUsuario, removerUsuario, trocarSenhaUsuario,
-  type UsuarioListado,
+  type UsuarioListado, type Papel,
 } from '../data/sessao';
 
 interface Props {
   token: string;
   meuId: string;
+  /** Abre a tela de trocar a PRÓPRIA senha (fora deste popup). */
+  onMinhaSenha: () => void;
   onClose: () => void;
 }
 
-export function UsuariosModal({ token, meuId, onClose }: Props) {
+export function UsuariosModal({ token, meuId, onMinhaSenha, onClose }: Props) {
   const [lista, setLista] = useState<UsuarioListado[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState('');
@@ -26,6 +28,7 @@ export function UsuariosModal({ token, meuId, onClose }: Props) {
   const [login, setLogin] = useState('');
   const [nome, setNome] = useState('');
   const [senha, setSenha] = useState('');
+  const [papel, setPapel] = useState<Papel>('vendedor');
 
   const carregar = async () => {
     setCarregando(true);
@@ -36,15 +39,18 @@ export function UsuariosModal({ token, meuId, onClose }: Props) {
 
   const criar = async () => {
     setErro(''); setSalvando(true);
-    const r = await criarUsuario(token, login, senha, nome);
+    const r = await criarUsuario(token, login, senha, nome, papel);
     setSalvando(false);
     if (!r.ok) { setErro(r.erro || 'Não foi possível concluir.'); return; }
-    setLogin(''); setNome(''); setSenha('');
+    setLogin(''); setNome(''); setSenha(''); setPapel('vendedor');
     carregar();
   };
 
   const remover = async (u: UsuarioListado) => {
-    if (!confirm(`Remover o acesso de "${u.login}"?`)) return;
+    const aviso = u.papel === 'admin'
+      ? `Remover o acesso de "${u.login}"? Ele é ADMINISTRADOR desta revenda.`
+      : `Remover o acesso de "${u.login}"?`;
+    if (!confirm(aviso)) return;
     setErro('');
     const r = await removerUsuario(token, u.id);
     if (!r.ok) { setErro(r.erro || 'Não foi possível concluir.'); return; }
@@ -57,10 +63,13 @@ export function UsuariosModal({ token, meuId, onClose }: Props) {
     setErro('');
     const r = await trocarSenhaUsuario(token, u.id, s);
     if (!r.ok) { setErro(r.erro || 'Não foi possível concluir.'); return; }
-    alert('Senha alterada. O vendedor precisa entrar de novo com a senha nova.');
+    alert(`Senha temporária definida para "${u.login}". Ele entra com ela e o app vai `
+      + 'pedir que escolha a senha dele. Depois disso, você não sabe mais a senha.');
+    carregar();
   };
 
   const vendedores = lista.filter((u) => u.papel === 'vendedor').length;
+  const admins = lista.filter((u) => u.papel === 'admin').length;
   const podeCriar = login.trim().length >= 3 && senha.length >= 4 && !salvando;
 
   return (
@@ -75,7 +84,9 @@ export function UsuariosModal({ token, meuId, onClose }: Props) {
           <div>
             <h3 className="text-lg font-medium text-zinc-800">Usuários</h3>
             <p className="text-xs text-zinc-400">
-              {carregando ? 'carregando…' : `${lista.length} no total · ${vendedores} vendedor${vendedores === 1 ? '' : 'es'}`}
+              {carregando
+                ? 'carregando…'
+                : `${admins} administrador${admins === 1 ? '' : 'es'} · ${vendedores} vendedor${vendedores === 1 ? '' : 'es'}`}
             </p>
           </div>
           <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700 p-1"><X size={20} /></button>
@@ -99,19 +110,31 @@ export function UsuariosModal({ token, meuId, onClose }: Props) {
                   {!u.ativo && (
                     <span className="text-[10px] uppercase tracking-wider bg-zinc-100 text-zinc-500 rounded-full px-2 py-0.5">Inativo</span>
                   )}
+                  {u.senhaTemporaria && (
+                    <span
+                      title="Ainda está com a senha temporária. Vai trocar no primeiro acesso."
+                      className="text-[10px] uppercase tracking-wider bg-amber-100 text-amber-700 rounded-full px-2 py-0.5 flex items-center gap-1"
+                    >
+                      <ShieldAlert size={10} /> senha temporária
+                    </span>
+                  )}
                 </div>
                 <p className="text-[11px] text-zinc-400 truncate">
                   {u.nome ? `${u.nome} · ` : ''}{u.pedidos} orçamento{u.pedidos === 1 ? '' : 's'}
                   {u.id === meuId ? ' · você' : ''}
                 </p>
               </div>
-              {u.id !== meuId && (
-                <button onClick={() => novaSenha(u)} title="Trocar senha"
-                  className="text-zinc-300 hover:text-zinc-700 p-1"><KeyRound size={16} /></button>
-              )}
-              {u.papel !== 'admin' && (
-                <button onClick={() => remover(u)} title="Remover"
-                  className="text-zinc-300 hover:text-red-500 p-1"><Trash2 size={16} /></button>
+              {u.id === meuId ? (
+                /* A sua própria senha se troca informando a atual, fora daqui. */
+                <button onClick={onMinhaSenha} title="Trocar a minha senha"
+                  className="text-zinc-400 hover:text-zinc-900 p-1"><KeyRound size={16} /></button>
+              ) : (
+                <>
+                  <button onClick={() => novaSenha(u)} title="Definir senha temporária"
+                    className="text-zinc-300 hover:text-zinc-700 p-1"><KeyRound size={16} /></button>
+                  <button onClick={() => remover(u)} title="Remover"
+                    className="text-zinc-300 hover:text-red-500 p-1"><Trash2 size={16} /></button>
+                </>
               )}
             </div>
           ))}
@@ -119,7 +142,23 @@ export function UsuariosModal({ token, meuId, onClose }: Props) {
 
         {/* Criar vendedor */}
         <div className="mt-5 rounded-2xl bg-zinc-50 p-4 space-y-2">
-          <p className="text-xs font-medium text-zinc-600 mb-1">Novo vendedor</p>
+          <p className="text-xs font-medium text-zinc-600 mb-1">Novo usuário</p>
+          <div className="grid grid-cols-2 gap-2 mb-1">
+            {(['vendedor', 'admin'] as Papel[]).map((op) => (
+              <button
+                key={op}
+                onClick={() => setPapel(op)}
+                className={
+                  'py-2.5 rounded-xl text-sm border transition-all ' +
+                  (papel === op
+                    ? 'bg-zinc-900 text-white border-zinc-900'
+                    : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300')
+                }
+              >
+                {op === 'vendedor' ? 'Vendedor' : 'Administrador'}
+              </button>
+            ))}
+          </div>
           <input
             value={login}
             onChange={(e) => setLogin(e.target.value)}
@@ -147,11 +186,14 @@ export function UsuariosModal({ token, meuId, onClose }: Props) {
             className="w-full bg-zinc-900 text-white py-3 rounded-xl text-sm font-medium disabled:opacity-40 flex items-center justify-center gap-2"
           >
             {salvando ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
-            Criar vendedor
+            {papel === 'admin' ? 'Criar administrador' : 'Criar vendedor'}
           </button>
           <p className="text-[11px] text-zinc-400 leading-snug">
-            O vendedor entra com o mesmo CNPJ e esse usuário e senha. Ele gera orçamentos
-            e vê apenas os dele.
+            {papel === 'admin'
+              ? 'O administrador gera orçamento e pedido, vê os orçamentos de toda a revenda e também cria usuários.'
+              : 'O vendedor gera orçamentos e vê apenas os dele. Não emite pedido de fábrica.'}
+            {' '}Entra com o mesmo CNPJ e esse usuário. A senha que você digitar é
+            temporária: no primeiro acesso ele escolhe a dele, e você deixa de saber a senha.
           </p>
         </div>
 

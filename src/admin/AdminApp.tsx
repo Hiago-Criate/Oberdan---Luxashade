@@ -993,15 +993,23 @@ function Revendas({ toast }: { toast: (m: string) => void }) {
   const [rows, setRows] = useState<any[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
-  // Login do app por revenda: quem é o admin dela e quantos usuários existem.
-  const [logins, setLogins] = useState<Record<string, { login: string | null; ativo: boolean; usuarios: number }>>({});
+  // Login do app por revenda: administradores, total de usuários e quantos ainda
+  // estão com a senha temporária (ou seja, não fizeram o 1º acesso).
+  type LoginInfo = { login: string | null; ativo: boolean; usuarios: number; admins: number; temporarias: number };
+  const [logins, setLogins] = useState<Record<string, LoginInfo>>({});
   const [acesso, setAcesso] = useState<any | null>(null);   // revenda no modal de acesso
 
   const carregarLogins = async () => {
     const { data } = await supabase.rpc('admin_login_revendas');
-    const m: Record<string, { login: string | null; ativo: boolean; usuarios: number }> = {};
+    const m: Record<string, LoginInfo> = {};
     for (const r of (data ?? []) as any[]) {
-      m[r.revenda_id] = { login: r.admin_login ?? null, ativo: r.admin_ativo !== false, usuarios: Number(r.usuarios) || 0 };
+      m[r.revenda_id] = {
+        login: r.admin_login ?? null,
+        ativo: r.admin_ativo !== false,
+        usuarios: Number(r.usuarios) || 0,
+        admins: Number(r.admins) || 0,
+        temporarias: Number(r.temporarias) || 0,
+      };
     }
     setLogins(m);
   };
@@ -1117,7 +1125,18 @@ function Revendas({ toast }: { toast: (m: string) => void }) {
                       {logins[r.id]?.login ? (
                         <span className="min-w-0 flex-1 truncate">
                           <span className="font-medium text-zinc-700">{logins[r.id].login}</span>
+                          {logins[r.id].admins > 1 && (
+                            <span className="text-zinc-400"> +{logins[r.id].admins - 1} adm</span>
+                          )}
                           <span className="text-zinc-400"> · {logins[r.id].usuarios} usuário{logins[r.id].usuarios === 1 ? '' : 's'}</span>
+                          {logins[r.id].temporarias > 0 && (
+                            <span
+                              title="Ainda com a senha temporária: a pessoa não fez o primeiro acesso."
+                              className="ml-1 text-[10px] uppercase tracking-wider bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5"
+                            >
+                              {logins[r.id].temporarias} temp
+                            </span>
+                          )}
                         </span>
                       ) : (
                         <span className="flex-1 text-zinc-400">definir acesso…</span>
@@ -1139,8 +1158,13 @@ function Revendas({ toast }: { toast: (m: string) => void }) {
   );
 }
 
-// Define o ADMINISTRADOR da revenda (quem entra no app e gerencia os vendedores).
-// Enquanto a revenda não tiver este acesso, ela continua entrando só com o CNPJ.
+// Cria um ADMINISTRADOR da revenda, ou reseta a senha de um que já existe.
+// A revenda pode ter vários administradores: o login digitado é a chave, um login
+// novo cria mais um. Enquanto a revenda não tiver nenhum, ela entra só com o CNPJ.
+//
+// A senha daqui é SEMPRE temporária: no primeiro acesso o app obriga a pessoa a
+// criar a senha dela. É isso que impede a revenda de dizer que a Luxashade fez
+// pedido no nome dela. (Lilian, 10/09/2026)
 function AcessoRevendaModal({ revenda, atual, onClose, onSaved }: {
   revenda: any; atual: string | null; onClose: () => void; onSaved: (msg: string) => void;
 }) {
@@ -1164,17 +1188,24 @@ function AcessoRevendaModal({ revenda, atual, onClose, onSaved }: {
       return;
     }
     if (!data?.ok) { setErro(String(data?.motivo ?? 'Falha ao salvar.')); return; }
-    onSaved(data.acao === 'criado' ? 'Acesso criado' : 'Acesso atualizado');
+    onSaved(data.acao === 'criado'
+      ? 'Administrador criado com senha temporária'
+      : 'Senha temporária redefinida');
   };
 
   return (
     <Modal title={`Acesso ao app · ${revenda.nome || 'revenda'}`} onClose={onClose}>
       <div className="space-y-3 text-sm">
         <p className="rounded-xl bg-zinc-50 px-3 py-2 text-xs text-zinc-500 leading-snug">
-          Cria o <b>administrador</b> desta revenda. Ele entra no app com o CNPJ e este
+          Cria um <b>administrador</b> desta revenda. Ele entra no app com o CNPJ e este
           usuário/senha, gera orçamento <b>e pedido</b>, vê os orçamentos de todos os
-          vendedores e cadastra os vendedores dele.
-          {atual && <> Salvar de novo <b>troca a senha</b> e desconecta as sessões abertas.</>}
+          vendedores e cadastra os usuários dele.
+          {atual && <> O login <b>{atual}</b> já existe: salvar com ele <b>reseta a senha</b> e
+            derruba as sessões. Para ter <b>mais um</b> administrador, escreva um login diferente.</>}
+        </p>
+        <p className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900 leading-snug">
+          Esta senha é <b>temporária</b>. No primeiro acesso o app obriga a pessoa a criar a
+          senha dela, e a partir daí a Luxashade não sabe mais a senha da revenda.
         </p>
         <div>
           <label className="text-xs text-zinc-500">Usuário</label>
@@ -1189,7 +1220,7 @@ function AcessoRevendaModal({ revenda, atual, onClose, onSaved }: {
             className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10" />
         </div>
         <div>
-          <label className="text-xs text-zinc-500">{atual ? 'Nova senha' : 'Senha'}</label>
+          <label className="text-xs text-zinc-500">Senha temporária</label>
           <input value={senha} onChange={(e) => setSenha(e.target.value)} autoCapitalize="none"
             placeholder="mínimo 4 caracteres"
             className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10" />
