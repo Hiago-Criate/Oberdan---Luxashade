@@ -17,6 +17,7 @@ import {
   LogOut,
   KeyRound,
   ShieldCheck,
+  Copy,
 } from 'lucide-react';
 import axios from 'axios';
 import { OrderFlow } from './components/OrderFlow';
@@ -77,6 +78,9 @@ export default function App() {
   const [histLoading, setHistLoading] = useState(false);
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [editingItem, setEditingItem] = useState<OrderItem | null>(null);
+  // Item recém-duplicado: ganha um destaque por alguns segundos para a pessoa
+  // achar a cópia logo abaixo do original.
+  const [destaqueId, setDestaqueId] = useState<string | null>(null);
   const [tipoEnvio, setTipoEnvio] = useState<TipoEnvio>('pedido');
   const [userInfo, setUserInfo] = useState({ name: '', phone: '' });
   const [loading, setLoading] = useState(false);
@@ -232,6 +236,23 @@ export default function App() {
 
   const handleRemove = (id: string) => {
     setCart((prev) => prev.filter((it) => it.id !== id));
+  };
+
+  // Duplica o item: cópia idêntica, logo ABAIXO do original, com id novo. A ideia
+  // é a pessoa clicar em "Editar" na cópia e mudar só o detalhe que difere, em
+  // vez de refazer a peça do zero. (Hiago, 16/09/2026)
+  const handleDuplicate = (item: OrderItem) => {
+    const copia: OrderItem = {
+      ...(JSON.parse(JSON.stringify(item)) as OrderItem),
+      id: Math.random().toString(36).slice(2, 11),
+    };
+    setCart((prev) => {
+      const idx = prev.findIndex((x) => x.id === item.id);
+      if (idx < 0) return [...prev, copia];
+      return [...prev.slice(0, idx + 1), copia, ...prev.slice(idx + 1)];
+    });
+    setDestaqueId(copia.id);
+    window.setTimeout(() => setDestaqueId((atual) => (atual === copia.id ? null : atual)), 3000);
   };
 
   // ----- Histórico de pedidos (por CNPJ) -----
@@ -704,7 +725,9 @@ export default function App() {
                     key={item.id}
                     item={item}
                     numero={idx + 1}
+                    destaque={item.id === destaqueId}
                     onEdit={() => handleEdit(item)}
+                    onDuplicate={() => handleDuplicate(item)}
                     onRemove={() => handleRemove(item.id)}
                   />
                 ))}
@@ -964,11 +987,13 @@ export default function App() {
 interface CartItemProps {
   item: OrderItem;
   numero: number;
+  destaque?: boolean;       // recém-duplicado
   onEdit: () => void;
+  onDuplicate: () => void;
   onRemove: () => void;
 }
 
-function CartItemCard({ item, numero, onEdit, onRemove }: CartItemProps) {
+function CartItemCard({ item, numero, destaque, onEdit, onDuplicate, onRemove }: CartItemProps) {
   const title =
     item.kind === 'trilho'
       ? item.model
@@ -993,7 +1018,10 @@ function CartItemCard({ item, numero, onEdit, onRemove }: CartItemProps) {
   return (
     <motion.div
       layout
-      className="bg-white border border-zinc-100 p-5 rounded-3xl shadow-sm space-y-4"
+      className={cn(
+        'bg-white border p-5 rounded-3xl shadow-sm space-y-4 transition-all duration-500',
+        destaque ? 'border-zinc-900 ring-4 ring-zinc-900/10' : 'border-zinc-100',
+      )}
     >
       <div className="flex justify-between items-start gap-3">
         <div className="min-w-0">
@@ -1105,6 +1133,13 @@ function CartItemCard({ item, numero, onEdit, onRemove }: CartItemProps) {
           className="flex-1 bg-zinc-50 text-zinc-600 py-3 rounded-xl text-xs font-medium flex items-center justify-center gap-2 hover:bg-zinc-100 transition-colors"
         >
           <Edit2 size={14} /> Editar
+        </button>
+        <button
+          onClick={onDuplicate}
+          title="Cria uma cópia deste item logo abaixo, para editar só o que muda"
+          className="flex-1 bg-zinc-50 text-zinc-600 py-3 rounded-xl text-xs font-medium flex items-center justify-center gap-2 hover:bg-zinc-100 transition-colors"
+        >
+          <Copy size={14} /> Duplicar
         </button>
         <button
           onClick={onRemove}
