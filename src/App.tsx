@@ -32,6 +32,7 @@ import { HistoricoDrawer } from './components/HistoricoDrawer';
 import { modulosDuplaLabel, type OrderItem } from './types/order';
 import { maskPhoneBR, parsePhoneBR, envioLegivel } from './utils/phone';
 import { UsuariosModal } from './components/UsuariosModal';
+import { enviarComRetentativas } from './utils/envio';
 import {
   revendaExigeLogin, loginRevenda, logoutRevenda, trocarMinhaSenha, type Sessao,
 } from './data/sessao';
@@ -43,6 +44,7 @@ type Step = 'landing' | 'cnpj' | 'login' | 'novasenha' | 'brand' | 'order' | 'ca
 type TipoEnvio = 'orcamento' | 'pedido';
 
 const WEBHOOK_URL = 'https://212hook.criate.online/webhook/94e9c23d-4b00-40aa-8e20-8e4da2c94907';
+
 
 export default function App() {
   const [step, setStep] = useState<Step>('landing');
@@ -84,6 +86,9 @@ export default function App() {
   const [tipoEnvio, setTipoEnvio] = useState<TipoEnvio>('pedido');
   const [userInfo, setUserInfo] = useState({ name: '', phone: '' });
   const [loading, setLoading] = useState(false);
+  // Tentativa atual do envio ao WhatsApp (1 = primeira). Só aparece no botão
+  // quando a primeira falhou e o app está tentando de novo sozinho.
+  const [tentativaEnvio, setTentativaEnvio] = useState(1);
 
   // Desconto da revenda (identificada pelo CNPJ). Sem revenda/sem desconto → 0.
   const subtotal = cart.reduce((acc, it) => acc + it.price, 0);
@@ -298,6 +303,11 @@ export default function App() {
       return;
     }
     setLoading(true);
+    setTentativaEnvio(1);
+    // Vira true assim que o banco aceita o registro. Se o envio falhar depois
+    // disso, o orçamento NÃO se perdeu, e a mensagem precisa dizer isso.
+    let registrado = false;
+    let numeroRegistrado = '';
     try {
       const now = new Date();
       // Nº provisório do documento (o número oficial é atribuído depois no TOTVS).
@@ -375,8 +385,14 @@ export default function App() {
         setPedidoId(salvo.id);
         setPedidoNumero(numero);
       }
+      registrado = true;
+      numeroRegistrado = numero;
 
-      await axios.post(WEBHOOK_URL, {
+      // O n8n responde "recebi" na hora e só depois manda o WhatsApp, então uma
+      // falha AQUI é de conexão (internet de quem está enviando, ou o servidor
+      // fora por um instante), nunca do telefone do cliente. Antes era uma
+      // tentativa só: um soluço de rede virava "Erro ao enviar". (16/10/2026)
+      await enviarComRetentativas(WEBHOOK_URL, {
         // v5: + desconto por revenda (subtotal/descontoPct/descontoValor) e bloco
         // `revenda`. v4 trouxe numeroOrcamento e pdf; v3, item 'emissor' + observacao.
         schemaVersion: 5,
@@ -399,15 +415,28 @@ export default function App() {
         total,
         // PDF pronto p/ anexar/encaminhar no n8n (Convert to File a partir do base64).
         pdf,
-      });
+      }, { onTentativa: setTentativaEnvio });
       setStep('success');
     } catch (e) {
       console.error('Submission error:', e);
-      alert(tipoEnvio === 'orcamento'
-        ? 'Erro ao enviar orçamento. Tente novamente.'
-        : 'Erro ao enviar pedido. Tente novamente.');
+      const doc = tipoEnvio === 'orcamento' ? 'orçamento' : 'pedido';
+      if (registrado) {
+        // O registro existe. Reenviar reaproveita o mesmo número e a mesma linha
+        // no banco (pedidoId/pedidoNumero já estão no estado): não duplica.
+        const semInternet = typeof navigator !== 'undefined' && navigator.onLine === false;
+        alert(
+          `Seu ${doc} Nº ${numeroRegistrado} está salvo, mas não conseguimos enviar pelo WhatsApp agora.\n\n`
+          + (semInternet
+            ? 'Este aparelho parece estar sem internet. '
+            : 'Pode ter sido uma oscilação na internet. ')
+          + 'Confira a conexão e toque em enviar de novo. Ele não será duplicado.',
+        );
+      } else {
+        alert(`Não conseguimos preparar o ${doc}. Tente novamente em instantes.`);
+      }
     } finally {
       setLoading(false);
+      setTentativaEnvio(1);
     }
   };
 
@@ -866,7 +895,7 @@ export default function App() {
                 className="w-full bg-zinc-900 text-white py-5 rounded-2xl font-medium disabled:opacity-50 transition-all flex items-center justify-center gap-2"
               >
                 {loading
-                  ? 'Enviando...'
+                  ? (tentativaEnvio > 1 ? `Tentando de novo (${tentativaEnvio}/3)...` : 'Enviando...')
                   : tipoEnvio === 'orcamento'
                   ? 'Enviar Orçamento'
                   : 'Concluir Pedido'}

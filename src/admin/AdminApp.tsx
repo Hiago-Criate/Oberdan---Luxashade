@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard, Tag, Ruler, Layers3, Palette, Cpu, Wrench, Settings2,
   History, LogOut, Save, Plus, Trash2, Search, ExternalLink, RefreshCw,
-  AlertTriangle, Check, Lock, RadioTower, X, Upload, FileSpreadsheet, Loader2, CheckCircle2, KeyRound, Store,
+  AlertTriangle, Check, Lock, RadioTower, X, Upload, FileSpreadsheet, Loader2, CheckCircle2, KeyRound, Store, Pencil,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { cn } from '../utils/cn';
@@ -143,10 +143,15 @@ function useToast() {
   return { msg, show };
 }
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, children, largo }: {
+  title: string; onClose: () => void; children: React.ReactNode; largo?: boolean;
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={cn('w-full rounded-2xl bg-white p-5 shadow-xl max-h-[90vh] overflow-y-auto', largo ? 'max-w-lg' : 'max-w-md')}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="mb-3 flex items-center justify-between gap-3">
           <h3 className="font-semibold text-zinc-800">{title}</h3>
           <button onClick={onClose} className="text-zinc-400 hover:text-zinc-700"><X size={18} /></button>
@@ -1065,9 +1070,8 @@ function Revendas({ toast }: { toast: (m: string) => void }) {
       {acesso && (
         <AcessoRevendaModal
           revenda={acesso}
-          atual={logins[acesso.id]?.login ?? null}
           onClose={() => setAcesso(null)}
-          onSaved={(msg) => { setAcesso(null); toast(msg); carregarLogins(); }}
+          onChanged={(msg) => { toast(msg); carregarLogins(); }}
         />
       )}
 
@@ -1158,84 +1162,238 @@ function Revendas({ toast }: { toast: (m: string) => void }) {
   );
 }
 
-// Cria um ADMINISTRADOR da revenda, ou reseta a senha de um que já existe.
-// A revenda pode ter vários administradores: o login digitado é a chave, um login
-// novo cria mais um. Enquanto a revenda não tiver nenhum, ela entra só com o CNPJ.
+// Acesso ao app de UMA revenda: lista os logins e deixa EDITAR (login, nome,
+// papel), gerar SENHA TEMPORÁRIA, REMOVER e criar ADMINISTRADOR.
+// Nasceu do "edgar" que devia ser "fred" (20/10/2026): o painel só sabia criar,
+// e criar outro deixaria duplicado.
 //
-// A senha daqui é SEMPRE temporária: no primeiro acesso o app obriga a pessoa a
-// criar a senha dela. É isso que impede a revenda de dizer que a Luxashade fez
-// pedido no nome dela. (Lilian, 10/09/2026)
-function AcessoRevendaModal({ revenda, atual, onClose, onSaved }: {
-  revenda: any; atual: string | null; onClose: () => void; onSaved: (msg: string) => void;
-}) {
-  const [login, setLogin] = useState(atual ?? '');
-  const [nome, setNome] = useState('');
-  const [senha, setSenha] = useState('');
-  const [erro, setErro] = useState('');
-  const [salvando, setSalvando] = useState(false);
+// As travas ficam no banco (sql/admin_editar_usuarios.sql): só a allowlist do
+// painel chama, nada revela senha, e tudo vai para o histórico com o e-mail de
+// quem fez. A senha cadastrada aqui é sempre temporária (Lilian, 10/09/2026).
+interface UsuarioPainel {
+  id: string; login: string; nome: string | null; papel: 'admin' | 'vendedor';
+  ativo: boolean; senha_temporaria: boolean; criado_em: string;
+  ultimo_acesso: string | null; pedidos: number;
+}
 
-  const salvar = async () => {
-    setErro(''); setSalvando(true);
-    const { data, error } = await supabase.rpc('admin_definir_admin_revenda', {
-      p_revenda_id: revenda.id, p_login: login, p_senha: senha, p_nome: nome,
-    });
-    setSalvando(false);
+const FALTA_FUNCAO = /Could not find the function|schema cache|does not exist/i;
+const fmtDataCurta = (iso: string) =>
+  new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+
+function AcessoRevendaModal({ revenda, onClose, onChanged }: {
+  revenda: any; onClose: () => void; onChanged: (msg: string) => void;
+}) {
+  const [usuarios, setUsuarios] = useState<UsuarioPainel[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [semEdicao, setSemEdicao] = useState(false);   // SQL de edição ainda não rodado
+  const [erro, setErro] = useState('');
+  const [ocupado, setOcupado] = useState(false);
+  // edição na própria linha
+  const [editId, setEditId] = useState<string | null>(null);
+  const [eLogin, setELogin] = useState('');
+  const [eNome, setENome] = useState('');
+  const [ePapel, setEPapel] = useState<'admin' | 'vendedor'>('admin');
+  // novo administrador
+  const [nLogin, setNLogin] = useState('');
+  const [nNome, setNNome] = useState('');
+  const [nSenha, setNSenha] = useState('');
+
+  const carregar = async () => {
+    setCarregando(true);
+    const { data, error } = await supabase.rpc('admin_listar_usuarios_revenda', { p_revenda_id: revenda.id });
+    setCarregando(false);
     if (error) {
-      const faltaSql = /Could not find the function|schema cache|does not exist/i.test(error.message ?? '');
-      setErro(faltaSql
-        ? 'O login de revenda ainda não está ligado no banco. Rode uma vez o arquivo sql/usuarios_revenda.sql em Supabase → SQL Editor.'
-        : (error.message ?? 'Falha ao salvar.'));
+      if (FALTA_FUNCAO.test(error.message ?? '')) setSemEdicao(true);
+      else setErro(error.message ?? 'Falha ao carregar os logins.');
       return;
     }
-    if (!data?.ok) { setErro(String(data?.motivo ?? 'Falha ao salvar.')); return; }
-    onSaved(data.acao === 'criado'
-      ? 'Administrador criado com senha temporária'
-      : 'Senha temporária redefinida');
+    setSemEdicao(false);
+    setUsuarios(((data ?? []) as any[]).map((u) => ({ ...u, pedidos: Number(u.pedidos) || 0 })));
+  };
+  useEffect(() => { carregar(); }, [revenda.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Chama uma função do banco e traduz a resposta. null = deu errado (e o erro já está na tela).
+  const chamar = async (fn: string, args: Record<string, unknown>, arquivoSql: string) => {
+    setErro(''); setOcupado(true);
+    const { data, error } = await supabase.rpc(fn, args);
+    setOcupado(false);
+    if (error) {
+      setErro(FALTA_FUNCAO.test(error.message ?? '')
+        ? `Falta rodar uma vez o arquivo ${arquivoSql} no Supabase → SQL Editor.`
+        : (error.message ?? 'Falha ao salvar.'));
+      return null;
+    }
+    if (!data?.ok) { setErro(String(data?.motivo ?? 'Não foi possível concluir.')); return null; }
+    return data as any;
   };
 
+  const abrirEdicao = (u: UsuarioPainel) => {
+    setEditId(u.id); setELogin(u.login); setENome(u.nome ?? ''); setEPapel(u.papel); setErro('');
+  };
+
+  const salvarEdicao = async (u: UsuarioPainel) => {
+    const novoLogin = eLogin.trim().toLowerCase();
+    const r = await chamar('admin_editar_usuario_revenda',
+      { p_id: u.id, p_login: novoLogin, p_nome: eNome, p_papel: ePapel }, 'sql/admin_editar_usuarios.sql');
+    if (!r) return;
+    setEditId(null);
+    onChanged(novoLogin !== u.login ? `Login alterado: "${u.login}" agora é "${novoLogin}"` : 'Usuário atualizado');
+    carregar();
+  };
+
+  const senhaTemporaria = async (u: UsuarioPainel) => {
+    const s = prompt(
+      `Senha temporária para "${u.login}" (mínimo 4 caracteres).\n\n`
+      + 'No próximo acesso o app obriga a pessoa a criar a senha dela. As sessões abertas caem agora.',
+    );
+    if (!s) return;
+    const r = await chamar('admin_resetar_senha_usuario', { p_id: u.id, p_senha: s }, 'sql/admin_editar_usuarios.sql');
+    if (!r) return;
+    onChanged(r.reativado ? `Senha temporária definida e "${u.login}" reativado` : `Senha temporária definida para "${u.login}"`);
+    carregar();
+  };
+
+  const remover = async (u: UsuarioPainel) => {
+    const unicoAtivo = usuarios.filter((x) => x.ativo).length === 1;
+    const aviso = `Remover o acesso de "${u.login}"?`
+      + (unicoAtivo ? '\n\nÉ o único acesso desta revenda: ela volta a entrar só com o CNPJ.' : '')
+      + (u.pedidos > 0 ? `\n\nEle tem ${u.pedidos} orçamento(s) no histórico, então fica desativado e o histórico continua.` : '');
+    if (!confirm(aviso)) return;
+    const r = await chamar('admin_remover_usuario_revenda', { p_id: u.id }, 'sql/admin_editar_usuarios.sql');
+    if (!r) return;
+    onChanged(r.sem_login
+      ? 'Acesso removido. A revenda volta a entrar só com o CNPJ.'
+      : r.acao === 'desativado' ? `"${u.login}" desativado` : `"${u.login}" removido`);
+    carregar();
+  };
+
+  const loginNovoJaExiste = usuarios.some((u) => u.login === nLogin.trim().toLowerCase());
+  const criarAdmin = async () => {
+    const r = await chamar('admin_definir_admin_revenda',
+      { p_revenda_id: revenda.id, p_login: nLogin, p_senha: nSenha, p_nome: nNome }, 'sql/usuarios_revenda.sql');
+    if (!r) return;
+    setNLogin(''); setNNome(''); setNSenha('');
+    onChanged('Administrador criado com senha temporária');
+    carregar();
+  };
+
+  const campo = 'mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10';
+
   return (
-    <Modal title={`Acesso ao app · ${revenda.nome || 'revenda'}`} onClose={onClose}>
-      <div className="space-y-3 text-sm">
-        <p className="rounded-xl bg-zinc-50 px-3 py-2 text-xs text-zinc-500 leading-snug">
-          Cria um <b>administrador</b> desta revenda. Ele entra no app com o CNPJ e este
-          usuário/senha, gera orçamento <b>e pedido</b>, vê os orçamentos de todos os
-          vendedores e cadastra os usuários dele.
-          {atual && <> O login <b>{atual}</b> já existe: salvar com ele <b>reseta a senha</b> e
-            derruba as sessões. Para ter <b>mais um</b> administrador, escreva um login diferente.</>}
-        </p>
-        <p className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900 leading-snug">
-          Esta senha é <b>temporária</b>. No primeiro acesso o app obriga a pessoa a criar a
-          senha dela, e a partir daí a Luxashade não sabe mais a senha da revenda.
-        </p>
-        <div>
-          <label className="text-xs text-zinc-500">Usuário</label>
-          <input value={login} onChange={(e) => setLogin(e.target.value)} autoCapitalize="none"
-            placeholder="ex: casaecortina"
-            className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10" />
+    <Modal title={`Acesso ao app · ${revenda.nome || 'revenda'}`} onClose={onClose} largo>
+      <div className="space-y-4 text-sm">
+        {/* -------- logins existentes -------- */}
+        <div className="space-y-2">
+          {carregando ? (
+            <p className="flex items-center gap-2 text-xs text-zinc-400"><Loader2 size={13} className="animate-spin" /> carregando…</p>
+          ) : semEdicao ? (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-snug text-amber-900">
+              Para listar, editar e remover os logins, falta rodar uma vez o arquivo
+              <b> sql/admin_editar_usuarios.sql</b> no Supabase → SQL Editor. Enquanto isso, dá para criar administrador abaixo.
+            </p>
+          ) : usuarios.length === 0 ? (
+            <p className="rounded-xl bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+              Nenhum login ainda: esta revenda entra só com o CNPJ. Crie o primeiro administrador abaixo.
+            </p>
+          ) : (
+            usuarios.map((u) => editId === u.id ? (
+              <div key={u.id} className="space-y-2 rounded-xl border border-zinc-900 bg-zinc-50 p-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] text-zinc-500">Usuário (login)</label>
+                    <input value={eLogin} onChange={(e) => setELogin(e.target.value)} autoCapitalize="none" className={campo} />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-zinc-500">Nome</label>
+                    <input value={eNome} onChange={(e) => setENome(e.target.value)} className={campo} />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {(['admin', 'vendedor'] as const).map((op) => (
+                    <button key={op} onClick={() => setEPapel(op)}
+                      className={cn('flex-1 rounded-lg border py-1.5 text-xs transition-colors',
+                        ePapel === op ? 'border-zinc-900 bg-zinc-900 text-white' : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300')}>
+                      {op === 'admin' ? 'Administrador' : 'Vendedor'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] leading-snug text-zinc-500">
+                  A senha não muda.
+                  {eLogin.trim() && eLogin.trim().toLowerCase() !== u.login && <> A partir de agora ele entra com <b>{eLogin.trim().toLowerCase()}</b>.</>}
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => { setEditId(null); setErro(''); }} className="rounded-lg px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-100">Cancelar</button>
+                  <button onClick={() => salvarEdicao(u)} disabled={ocupado || eLogin.trim().length < 3}
+                    className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">
+                    {ocupado ? 'Salvando…' : 'Salvar'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div key={u.id} className={cn('flex items-center gap-1 rounded-xl border border-zinc-200 px-3 py-2', !u.ativo && 'opacity-50')}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-medium text-zinc-800">{u.login}</span>
+                    <span className={cn('rounded-full px-1.5 py-0.5 text-[10px] uppercase tracking-wider',
+                      u.papel === 'admin' ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-500')}>
+                      {u.papel === 'admin' ? 'Admin' : 'Vendedor'}
+                    </span>
+                    {u.senha_temporaria && (
+                      <span title="Ainda não fez o primeiro acesso" className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-amber-700">senha temporária</span>
+                    )}
+                    {!u.ativo && <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-zinc-500">inativo</span>}
+                  </div>
+                  <p className="truncate text-[11px] text-zinc-400">
+                    {u.nome ? `${u.nome} · ` : ''}{u.ultimo_acesso ? `último acesso ${fmtDataCurta(u.ultimo_acesso)}` : 'nunca entrou'}
+                  </p>
+                </div>
+                <button onClick={() => abrirEdicao(u)} disabled={ocupado} title="Editar login, nome ou papel"
+                  className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800"><Pencil size={15} /></button>
+                <button onClick={() => senhaTemporaria(u)} disabled={ocupado} title="Gerar senha temporária"
+                  className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-800"><KeyRound size={15} /></button>
+                <button onClick={() => remover(u)} disabled={ocupado || !u.ativo} title="Remover acesso"
+                  className="rounded-lg p-1.5 text-zinc-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-30"><Trash2 size={15} /></button>
+              </div>
+            ))
+          )}
         </div>
-        <div>
-          <label className="text-xs text-zinc-500">Nome (opcional)</label>
-          <input value={nome} onChange={(e) => setNome(e.target.value)}
-            placeholder="ex: Fernanda (gerente)"
-            className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10" />
+
+        {/* -------- novo administrador -------- */}
+        <div className="space-y-2 rounded-xl bg-zinc-50 p-3">
+          <p className="text-xs font-medium text-zinc-600">Novo administrador</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[11px] text-zinc-500">Usuário</label>
+              <input value={nLogin} onChange={(e) => setNLogin(e.target.value)} autoCapitalize="none" placeholder="ex: fernanda" className={campo} />
+            </div>
+            <div>
+              <label className="text-[11px] text-zinc-500">Nome (opcional)</label>
+              <input value={nNome} onChange={(e) => setNNome(e.target.value)} placeholder="ex: Fernanda (gerente)" className={campo} />
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] text-zinc-500">Senha temporária</label>
+            <input value={nSenha} onChange={(e) => setNSenha(e.target.value)} autoCapitalize="none" placeholder="mínimo 4 caracteres" className={campo} />
+          </div>
+          {loginNovoJaExiste && (
+            <p className="text-[11px] leading-snug text-amber-700">
+              Esse login já existe nesta revenda. Para corrigir ou trocar a senha dele, use os botões na lista acima.
+            </p>
+          )}
+          <p className="text-[11px] leading-snug text-zinc-500">
+            A senha é <b>temporária</b>: no primeiro acesso a pessoa cria a dela, e a Luxashade deixa de saber.
+          </p>
+          <div className="flex justify-end">
+            <button onClick={criarAdmin}
+              disabled={ocupado || nLogin.trim().length < 3 || nSenha.length < 4 || loginNovoJaExiste}
+              className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white disabled:opacity-40">
+              {ocupado ? 'Salvando…' : 'Criar administrador'}
+            </button>
+          </div>
         </div>
-        <div>
-          <label className="text-xs text-zinc-500">Senha temporária</label>
-          <input value={senha} onChange={(e) => setSenha(e.target.value)} autoCapitalize="none"
-            placeholder="mínimo 4 caracteres"
-            className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10" />
-        </div>
-        {erro && <p className="text-xs text-red-600 leading-snug">{erro}</p>}
-        <div className="flex justify-end gap-2 pt-1">
-          <button onClick={onClose} className="rounded-lg px-3 py-2 text-xs text-zinc-500 hover:bg-zinc-100">Cancelar</button>
-          <button
-            onClick={salvar}
-            disabled={login.trim().length < 3 || senha.length < 4 || salvando}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-medium text-white disabled:opacity-40"
-          >
-            {salvando ? 'Salvando…' : atual ? 'Atualizar acesso' : 'Criar acesso'}
-          </button>
-        </div>
+
+        {erro && <p className="text-xs leading-snug text-red-600">{erro}</p>}
+        <p className="text-[11px] text-zinc-400">Toda alteração aqui fica registrada no Histórico com o seu e-mail.</p>
       </div>
     </Modal>
   );
