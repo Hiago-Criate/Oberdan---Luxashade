@@ -5,6 +5,7 @@ import { calculatePrice, getTrilhoModelNames } from '../../utils/calculator';
 import { getMotors } from '../../utils/motorPrices';
 import { getCurvasTrilho, curvaByCodigo } from '../../data/trilhoCurvas';
 import { motorsForTrilho, validarTrilho, LARGURA_MAX_TRILHO_MM } from '../../data/trilhoPeso';
+import { CampoMm } from '../CampoMm';
 import { cn } from '../../utils/cn';
 import type { TrilhoItem } from '../../types/order';
 import type { Brand } from '../../data/brands';
@@ -143,21 +144,19 @@ export function TrilhoOrderFlow({ brand, initialItem, onSave }: Props) {
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <label className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Largura (mm)</label>
-          <input
-            type="number"
-            placeholder="0"
+          <CampoMm
             value={item.width}
-            onChange={(e) => setItem({ ...item, width: e.target.value })}
+            onChange={(mm) => setItem({ ...item, width: mm })}
+            avisarAbaixoDe={100}
             className="w-full bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5"
           />
         </div>
         <div className="space-y-2">
           <label className="text-xs uppercase tracking-widest text-zinc-400 font-semibold">Altura (mm)</label>
-          <input
-            type="number"
-            placeholder="0"
+          <CampoMm
             value={item.height}
-            onChange={(e) => setItem({ ...item, height: e.target.value })}
+            onChange={(mm) => setItem({ ...item, height: mm })}
+            avisarAbaixoDe={100}
             className="w-full bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5"
           />
         </div>

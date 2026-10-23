@@ -27,6 +27,7 @@ import { SelectField } from './steps/SelectField';
 import { ChipsField } from './steps/ChipsField';
 import { ComboBox } from './steps/ComboBox';
 import { OpcionaisField } from './steps/OpcionaisField';
+import { CampoMm } from '../CampoMm';
 
 const fmtBRL = (n: number) =>
   n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -475,11 +476,9 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
                     : `Entre ${fmtNum(limits.largMin, 0)} e ${fmtNum(limits.largMax, 0)} mm`
                 }
               >
-                <input
-                  type="number"
-                  placeholder="0"
+                <CampoMm
                   value={draft.widthStr}
-                  onChange={(e) => setDraft((d) => ({ ...d, widthStr: e.target.value.replace(/^0+(?=\d)/, '') }))}
+                  onChange={(mm) => setDraft((d) => ({ ...d, widthStr: mm }))}
                   className={cn(
                     'w-full bg-white border p-4 rounded-2xl focus:outline-none focus:ring-2',
                     widthInvalid
@@ -505,11 +504,9 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
                     : `Entre ${fmtNum(limits.altMin, 0)} e ${fmtNum(limits.altMax, 0)} mm`
                 }
               >
-                <input
-                  type="number"
-                  placeholder="0"
+                <CampoMm
                   value={draft.heightStr}
-                  onChange={(e) => setDraft((d) => ({ ...d, heightStr: e.target.value.replace(/^0+(?=\d)/, '') }))}
+                  onChange={(mm) => setDraft((d) => ({ ...d, heightStr: mm }))}
                   className={cn(
                     'w-full bg-white border p-4 rounded-2xl focus:outline-none focus:ring-2',
                     heightInvalid
@@ -693,11 +690,11 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
                   })}
                 </div>
               ) : (
-                <input
-                  type="number"
+                <CampoMm
                   placeholder="Ex: 1500"
                   value={draft.comandoAlturaStr}
-                  onChange={(e) => setDraft((d) => ({ ...d, comandoAlturaStr: e.target.value }))}
+                  onChange={(mm) => setDraft((d) => ({ ...d, comandoAlturaStr: mm }))}
+                  avisarAbaixoDe={100}
                   className="w-full bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5"
                 />
               )}
@@ -727,11 +724,10 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
                     <label className="text-[11px] uppercase tracking-widest text-zinc-400 font-semibold">
                       Módulo Esquerdo (mm)
                     </label>
-                    <input
-                      type="number"
-                      placeholder="0"
+                    <CampoMm
                       value={draft.modLargEsqStr}
-                      onChange={(e) => setDraft((d) => ({ ...d, modLargEsqStr: e.target.value }))}
+                      onChange={(mm) => setDraft((d) => ({ ...d, modLargEsqStr: mm }))}
+                      avisarAbaixoDe={100}
                       className="w-full bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5"
                     />
                   </div>
@@ -739,11 +735,10 @@ export function ShadeOrderFlow({ brand, familia, initialItem, onSave }: Props) {
                     <label className="text-[11px] uppercase tracking-widest text-zinc-400 font-semibold">
                       Módulo Direito (mm)
                     </label>
-                    <input
-                      type="number"
-                      placeholder="0"
+                    <CampoMm
                       value={draft.modLargDirStr}
-                      onChange={(e) => setDraft((d) => ({ ...d, modLargDirStr: e.target.value }))}
+                      onChange={(mm) => setDraft((d) => ({ ...d, modLargDirStr: mm }))}
+                      avisarAbaixoDe={100}
                       className="w-full bg-white border border-zinc-200 p-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-zinc-900/5"
                     />
                   </div>
